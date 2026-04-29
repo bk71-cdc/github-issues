@@ -65,12 +65,20 @@ body:
       placeholder: e.g., v1.3.0, v2.0.0
 
   
-  - type: input
+  - type: dropdown
     id: components
     attributes:
       label: Component/s
       description: Which component(s) does this relate to?
-      placeholder: e.g., UI, Backend, Database
+      options:
+        - "All Document Import"
+        - "Database"
+        - "eHARS User Interface"
+        - "Quality Assurance"
+        - "Requirements"
+      default: 0
+    validations:
+      required: true
 
   - type: dropdown
     id: module_info
