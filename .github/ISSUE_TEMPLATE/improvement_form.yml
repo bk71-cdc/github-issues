@@ -49,15 +49,6 @@ body:
     validations:
       required: true
 
-  - type: input
-    id: summary
-    attributes:
-      label: Summary
-      description: Provide a brief summary of the improvement
-      placeholder: Enter a concise summary
-    validations:
-      required: true
-
   
   - type: input
     id: affects_version
