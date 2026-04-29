@@ -103,7 +103,7 @@ body:
     attributes:
       label: Assignee
       description: Who should be assigned to this improvement?
-      placeholder: @username
+      placeholder: "@username"
 
   - type: textarea
     id: description
