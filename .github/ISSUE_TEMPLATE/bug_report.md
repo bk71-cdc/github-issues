@@ -1,4 +1,11 @@
-**Project** : eHARS
+---
+name: Bug report
+title: ''
+labels: ''
+assignees: ''
+
+---
+**Project** : eHARS 
 
 **Describe the bug**
 A clear and concise description of what the bug is.

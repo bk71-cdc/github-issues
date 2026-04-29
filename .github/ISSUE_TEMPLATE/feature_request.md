@@ -1,3 +1,11 @@
+---
+name: Feature request
+about: Suggest an Feature for this project
+title: ''
+labels: ''
+assignees: ''
+
+---
 **Project** : eHARS
 
 **Please describe what feature you want to add to project.**
