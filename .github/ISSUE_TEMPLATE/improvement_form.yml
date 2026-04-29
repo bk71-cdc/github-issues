@@ -34,6 +34,21 @@ body:
     validations:
       required: true
 
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Select the priority level
+      options:
+        - "Blocker"
+        - "Critical"
+        - "Major"
+        - "Average"
+        - "Minor"
+      default: 0
+    validations:
+      required: true
+
   - type: input
     id: summary
     attributes:
