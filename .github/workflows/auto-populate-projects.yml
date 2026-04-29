@@ -45,8 +45,8 @@ jobs:
             
             const projectValue = parseField('Project');
             const priorityValue = parseField('Priority');
-            const affectsVersion = parseField('Affects Version');
-            const fixVersion = parseField('Fix Version');
+            const affectsVersion = parseField('Affects Version/s') || parseField('Affects Version');
+            const fixVersion = parseField('Fix Version/s') || parseField('Fix Version');
             const issueType = parseField('Issue Type');
             
             console.log('✅ Extracted Values:');
@@ -57,29 +57,18 @@ jobs:
             console.log('Issue Type:', issueType);
             
             // Get project information using GraphQL
+            console.log('🔍 Checking repository access...');
+            console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
+            
             const query = `
               query($owner: String!, $repo: String!) {
                 repository(owner: $owner, name: $repo) {
+                  name
                   projectsV2(first: 10) {
+                    totalCount
                     nodes {
                       id
                       title
-                      fields(first: 20) {
-                        nodes {
-                          ... on ProjectV2FieldCommon {
-                            id
-                            name
-                          }
-                          ... on ProjectV2SingleSelectField {
-                            id
-                            name
-                            options {
-                              id
-                              name
-                            }
-                          }
-                        }
-                      }
                     }
                   }
                 }
@@ -92,17 +81,27 @@ jobs:
             };
             
             const result = await github.graphql(query, variables);
-            const projects = result.repository.projectsV2.nodes;
+            console.log('📊 Query result:', JSON.stringify(result, null, 2));
+            
+            const projects = result.repository.projectsV2;
+            console.log('🏢 Project count:', projects.totalCount);
+            
+            if (projects.totalCount === 0) {
+              console.log('❌ No projects found in repository');
+              console.log('⚠️ You may need to create a project first');
+              return;
+            }
+            
             console.log('🏢 Available projects:');
-            projects.forEach(project => {
+            projects.nodes.forEach(project => {
               console.log(`  - ${project.title} (ID: ${project.id})`);
             });
             
-            const targetProject = projects.find(p => p.title === 'GitHub_Jira');
+            const targetProject = projects.nodes.find(p => p.title === 'GitHub_Jira');
             
             if (!targetProject) {
               console.log('❌ GitHub_Jira project not found');
-              console.log('⚠️ Available project names:', projects.map(p => p.title));
+              console.log('⚠️ Available project names:', projects.nodes.map(p => p.title));
               return;
             }
             
