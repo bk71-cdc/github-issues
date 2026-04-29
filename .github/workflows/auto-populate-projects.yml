@@ -19,6 +19,10 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body;
             
+            // Debug: Log the body to see the format
+            console.log('📝 Issue body preview:');
+            console.log(body.substring(0, 500) + '...');
+            
             // Parse form data from issue body - updated regex to match our template format
             const parseField = (fieldName) => {
               const regex = new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`);
@@ -61,10 +65,6 @@ jobs:
                               name
                             }
                           }
-                          ... on ProjectV2TextField {
-                            id
-                            name
-                          }
                         }
                       }
                     }
@@ -88,6 +88,7 @@ jobs:
             }
             
             console.log('✅ Found project:', targetProject.title);
+            console.log('📋 Available fields:', targetProject.fields.nodes.map(f => ({ name: f.name, id: f.id })));
             
             // Add issue to project
             const addItemMutation = `
@@ -133,7 +134,10 @@ jobs:
                   console.log('✅ Updated Project field to:', projectValue);
                 } else {
                   console.log('⚠️ Project option not found:', projectValue);
+                  console.log('Available options:', projectField.options);
                 }
+              } else {
+                console.log('⚠️ Project field not found');
               }
             }
             
@@ -147,25 +151,38 @@ jobs:
                   console.log('✅ Updated Priority field to:', priorityValue);
                 } else {
                   console.log('⚠️ Priority option not found:', priorityValue);
+                  console.log('Available options:', priorityField.options);
                 }
+              } else {
+                console.log('⚠️ Priority field not found');
               }
             }
             
-            // Update Affects Version field
+            // Update Affects Version field (try both names)
             if (affectsVersion) {
-              const affectsVersionField = findField('Affects Version');
+              let affectsVersionField = findField('Affects Version/s');
+              if (!affectsVersionField) {
+                affectsVersionField = findField('Affects Version');
+              }
               if (affectsVersionField) {
                 await updateTextField(targetProject.id, itemId, affectsVersionField.id, affectsVersion);
                 console.log('✅ Updated Affects Version field to:', affectsVersion);
+              } else {
+                console.log('⚠️ Affects Version field not found');
               }
             }
             
-            // Update Fix Version field
+            // Update Fix Version field (try both names)
             if (fixVersion) {
-              const fixVersionField = findField('Fix Version');
+              let fixVersionField = findField('Fix Version/s');
+              if (!fixVersionField) {
+                fixVersionField = findField('Fix Version');
+              }
               if (fixVersionField) {
                 await updateTextField(targetProject.id, itemId, fixVersionField.id, fixVersion);
                 console.log('✅ Updated Fix Version field to:', fixVersion);
+              } else {
+                console.log('⚠️ Fix Version field not found');
               }
             }
             
