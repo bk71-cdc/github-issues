@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      repository-projects: write
     steps:
       - name: Parse form data and populate projects
         uses: actions/github-script@v7
@@ -19,27 +18,24 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body;
             
-            // Debug: Log the body to see the format
-            console.log('📝 Issue body preview:');
-            console.log(body.substring(0, 500) + '...');
+            console.log('📝 Processing issue #' + issue.number);
             
-            // Parse form data from issue body - updated regex to match our template format
+            // Parse form data
             const parseField = (fieldName) => {
-              // Try multiple patterns to find the field
               const patterns = [
-                new RegExp(`### ${fieldName}\\n\\n([^\n]+)`),  // GitHub form format
-                new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`),  // Markdown format
-                new RegExp(`${fieldName}:\\s*([^\n]+)`)  // Simple format
+                new RegExp(`### ${fieldName}\\n\\n([^\n]+)`),
+                new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`),
               ];
-              
+            
               for (const pattern of patterns) {
                 const match = body.match(pattern);
                 if (match) {
-                  console.log(`✅ Found ${fieldName}: ${match[1].trim()}`);
-                  return match[1].trim();
+                  const value = match[1].trim();
+                  if (value && value !== '_No response_') {
+                    return value;
+                  }
                 }
               }
-              console.log(`❌ ${fieldName} not found`);
               return null;
             };
             
@@ -47,231 +43,35 @@ jobs:
             const priorityValue = parseField('Priority');
             const affectsVersion = parseField('Affects Version/s') || parseField('Affects Version');
             const fixVersion = parseField('Fix Version/s') || parseField('Fix Version');
-            const issueType = parseField('Issue Type');
             
             console.log('✅ Extracted Values:');
-            console.log('Project:', projectValue);
-            console.log('Priority:', priorityValue);
-            console.log('Affects Version:', affectsVersion);
-            console.log('Fix Version:', fixVersion);
-            console.log('Issue Type:', issueType);
+            console.log('  Project:', projectValue);
+            console.log('  Priority:', priorityValue);
+            console.log('  Affects Version:', affectsVersion);
+            console.log('  Fix Version:', fixVersion);
             
-            // Get project information using GraphQL
-            console.log('🔍 Checking repository access...');
-            console.log('Repository:', context.repo.owner + '/' + context.repo.repo);
-            
+            // Query user-level projects
             const query = `
-              query($owner: String!, $repo: String!) {
-                repository(owner: $owner, name: $repo) {
-                  name
+              query($owner: String!) {
+                user(login: $owner) {
                   projectsV2(first: 10) {
-                    totalCount
                     nodes {
                       id
                       title
-                    }
-                  }
-                }
-              }
-            `;
-            
-            const variables = {
-              owner: context.repo.owner,
-              repo: context.repo.repo
-            };
-            
-            const result = await github.graphql(query, variables);
-            console.log('📊 Query result:', JSON.stringify(result, null, 2));
-            
-            const projects = result.repository.projectsV2;
-            console.log('🏢 Project count:', projects.totalCount);
-            
-            if (projects.totalCount === 0) {
-              console.log('❌ No projects found in repository');
-              console.log('⚠️ You may need to create a project first');
-              return;
-            }
-            
-            console.log('🏢 Available projects:');
-            projects.nodes.forEach(project => {
-              console.log(`  - ${project.title} (ID: ${project.id})`);
-            });
-            
-            const targetProject = projects.nodes.find(p => p.title === 'GitHub_Jira');
-            
-            if (!targetProject) {
-              console.log('❌ GitHub_Jira project not found');
-              console.log('⚠️ Available project names:', projects.nodes.map(p => p.title));
-              return;
-            }
-            
-            console.log('✅ Found project:', targetProject.title);
-            console.log('📋 Available fields:');
-            targetProject.fields.nodes.forEach(field => {
-              console.log(`  - ${field.name} (ID: ${field.id}, Type: ${field.dataType || 'Unknown'})`);
-              if (field.options) {
-                console.log(`    Options: ${field.options.map(opt => opt.name).join(', ')}`);
-              }
-            });
-            
-            // Add issue to project
-            const addItemMutation = `
-              mutation($projectId: ID!, $contentId: ID!) {
-                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
-                  item {
-                    id
-                  }
-                }
-              }
-            `;
-            
-            const addItemResult = await github.graphql(addItemMutation, {
-              projectId: targetProject.id,
-              contentId: issue.node_id
-            });
-            
-            const itemId = addItemResult.addProjectV2ItemById.item.id;
-            console.log('✅ Issue added to project with item ID:', itemId);
-            
-            // Find field IDs and update values
-            const fields = targetProject.fields.nodes;
-            
-            // Helper function to find field by name
-            const findField = (fieldName) => {
-              return fields.find(f => f.name === fieldName);
-            };
-            
-            // Helper function to find option ID for single select fields
-            const findOptionId = (field, value) => {
-              if (!field.options) return null;
-              const option = field.options.find(opt => opt.name === value);
-              return option ? option.id : null;
-            };
-            
-            // Update Project field
-            if (projectValue) {
-              const projectField = findField('Project');
-              if (projectField) {
-                const optionId = findOptionId(projectField, projectValue);
-                if (optionId) {
-                  await updateSingleSelectField(targetProject.id, itemId, projectField.id, optionId);
-                  console.log('✅ Updated Project field to:', projectValue);
-                } else {
-                  console.log('⚠️ Project option not found:', projectValue);
-                  console.log('Available options:', projectField.options);
-                }
-              } else {
-                console.log('⚠️ Project field not found');
-              }
-            }
-            
-            // Update Priority field
-            if (priorityValue) {
-              const priorityField = findField('Priority');
-              if (priorityField) {
-                const optionId = findOptionId(priorityField, priorityValue);
-                if (optionId) {
-                  await updateSingleSelectField(targetProject.id, itemId, priorityField.id, optionId);
-                  console.log('✅ Updated Priority field to:', priorityValue);
-                } else {
-                  console.log('⚠️ Priority option not found:', priorityValue);
-                  console.log('Available options:', priorityField.options);
-                }
-              } else {
-                console.log('⚠️ Priority field not found');
-              }
-            }
-            
-            // Update Affects Version field
-            if (affectsVersion) {
-              const affectsVersionField = findField('Affects Version');
-              if (affectsVersionField) {
-                await updateTextField(targetProject.id, itemId, affectsVersionField.id, affectsVersion);
-                console.log('✅ Updated Affects Version field to:', affectsVersion);
-              } else {
-                console.log('⚠️ Affects Version field not found');
-              }
-            }
-            
-            // Update Fix Version field
-            if (fixVersion) {
-              const fixVersionField = findField('Fix Version');
-              if (fixVersionField) {
-                await updateTextField(targetProject.id, itemId, fixVersionField.id, fixVersion);
-                console.log('✅ Updated Fix Version field to:', fixVersion);
-              } else {
-                console.log('⚠️ Fix Version field not found');
-              }
-            }
-            
-            // Helper functions for field updates
-            async function updateSingleSelectField(projectId, itemId, fieldId, optionId) {
-              const mutation = `
-                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
-                  updateProjectV2ItemFieldValue(input: {
-                    projectId: $projectId
-                    itemId: $itemId
-                    fieldId: $fieldId
-                    value: { singleSelectOptionId: $optionId }
-                  }) {
-                    projectV2Item {
-                      id
-                    }
-                  }
-                }
-              `;
-              
-              await github.graphql(mutation, {
-                projectId, itemId, fieldId, optionId
-              });
-            }
-            
-            async function updateTextField(projectId, itemId, fieldId, text) {
-              const mutation = `
-                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $text: String!) {
-                  updateProjectV2ItemFieldValue(input: {
-                    projectId: $projectId
-                    itemId: $itemId
-                    fieldId: $fieldId
-                    value: { text: $text }
-                  }) {
-                    projectV2Item {
-                      id
-                    }
-                  }
-                }
-              `;
-              
-              await github.graphql(mutation, {
-                projectId, itemId, fieldId, text
-              });
-            }
-            
-            console.log('🎉 All project fields updated successfully!');
-            
-            // Final verification - try to read back the values
-            const verifyQuery = `
-              query($itemId: ID!) {
-                node(id: $itemId) {
-                  ... on ProjectV2Item {
-                    id
-                    fieldValues(first: 20) {
-                      nodes {
-                        ... on ProjectV2ItemFieldSingleSelectValue {
-                          field {
-                            ... on ProjectV2FieldCommon {
+                      fields(first: 30) {
+                        nodes {
+                          ... on ProjectV2FieldCommon {
+                            id
+                            name
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
                               name
                             }
                           }
-                          optionId
-                        }
-                        ... on ProjectV2ItemFieldTextValue {
-                          field {
-                            ... on ProjectV2FieldCommon {
-                              name
-                            }
-                          }
-                          text
                         }
                       }
                     }
@@ -280,16 +80,108 @@ jobs:
               }
             `;
             
-            try {
-              const verifyResult = await github.graphql(verifyQuery, { itemId });
-              console.log('🔍 VERIFICATION - Current field values:');
-              if (verifyResult.node && verifyResult.node.fieldValues) {
-                verifyResult.node.fieldValues.nodes.forEach(fieldValue => {
-                  if (fieldValue.field) {
-                    console.log(`  ${fieldValue.field.name}: ${fieldValue.optionId || fieldValue.text || 'empty'}`);
-                  }
-                });
-              }
-            } catch (error) {
-              console.log('❌ Verification failed:', error.message);
+            const result = await github.graphql(query, {
+              owner: 'bk71-cdc'
+            });
+            
+            const projects = result.user.projectsV2.nodes;
+            console.log('🏢 Found projects:', projects.map(p => p.title).join(', '));
+            
+            const targetProject = projects.find(p => p.title === 'GitHub_Jira');
+            
+            if (!targetProject) {
+              console.log('❌ GitHub_Jira project not found');
+              return;
             }
+            
+            console.log('✅ Found project: GitHub_Jira');
+            console.log('📋 Available fields:', targetProject.fields.nodes.map(f => f.name).join(', '));
+            
+            // Add issue to project
+            try {
+              const addItemMutation = `
+                mutation($projectId: ID!, $contentId: ID!) {
+                  addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                    item {
+                      id
+                    }
+                  }
+                }
+              `;
+            
+              const addItemResult = await github.graphql(addItemMutation, {
+                projectId: targetProject.id,
+                contentId: issue.node_id
+              });
+            
+              var itemId = addItemResult.addProjectV2ItemById.item.id;
+              console.log('✅ Issue added to project with item ID:', itemId);
+            } catch (error) {
+              console.log('⚠️ Error adding to project:', error.message);
+              return;
+            }
+            
+            // Helper to update fields
+            const updateField = async (fieldName, value) => {
+              if (!value) return;
+            
+              const field = targetProject.fields.nodes.find(f => f.name === fieldName);
+              if (!field) {
+                console.log(`⚠️ Field "${fieldName}" not found`);
+                return;
+              }
+            
+              try {
+                if (field.options) {
+                  // Single select
+                  const option = field.options.find(opt => opt.name === value);
+                  if (!option) {
+                    console.log(`⚠️ Option "${value}" not found for ${fieldName}`);
+                    return;
+                  }
+            
+                  const mutation = `
+                    mutation {
+                      updateProjectV2ItemFieldValue(input: {
+                        projectId: "${targetProject.id}"
+                        itemId: "${itemId}"
+                        fieldId: "${field.id}"
+                        value: { singleSelectOptionId: "${option.id}" }
+                      }) {
+                        projectV2Item { id }
+                      }
+                    }
+                  `;
+            
+                  await github.graphql(mutation);
+                  console.log(`✅ Updated ${fieldName}: ${value}`);
+                } else {
+                  // Text field
+                  const mutation = `
+                    mutation {
+                      updateProjectV2ItemFieldValue(input: {
+                        projectId: "${targetProject.id}"
+                        itemId: "${itemId}"
+                        fieldId: "${field.id}"
+                        value: { text: "${value}" }
+                      }) {
+                        projectV2Item { id }
+                      }
+                    }
+                  `;
+            
+                  await github.graphql(mutation);
+                  console.log(`✅ Updated ${fieldName}: ${value}`);
+                }
+              } catch (error) {
+                console.log(`❌ Error updating ${fieldName}:`, error.message);
+              }
+            };
+            
+            // Update all fields
+            await updateField('Project', projectValue);
+            await updateField('Priority', priorityValue);
+            await updateField('Affects Version', affectsVersion);
+            await updateField('Fix Version', fixVersion);
+            
+            console.log('🎉 Done!');
