@@ -1,0 +1,128 @@
+name: Improvement
+description: Suggest an improvement for this project
+title: "[Improvement] "
+labels: ["improvement"]
+body:
+  - type: dropdown
+    id: project
+    attributes:
+      label: Project
+      description: Select the project this improvement relates to
+      options:
+        - eHARS
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: issue_type
+    attributes:
+      label: Issue Type
+      description: Select the type of issue
+      options:
+        - "Improvement"
+        - "Enhancement"
+        - "Update"
+      default: 0
+    validations:
+      required: true
+
+  - type: input
+    id: summary
+    attributes:
+      label: Summary
+      description: Provide a brief summary of the improvement
+      placeholder: Enter a concise summary
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Select the priority level
+      options:
+        - "Major"
+        - "Minor"
+        - "Critical"
+        - "Trivial"
+    validations:
+      required: true
+
+  - type: input
+    id: affects_version
+    attributes:
+      label: Affects Version/s
+      description: Which version(s) does this affect?
+      placeholder: e.g., v1.2.0, v1.1.x
+
+  - type: input
+    id: fix_version
+    attributes:
+      label: Fix Version/s
+      description: Which version(s) should include this fix?
+      placeholder: e.g., v1.3.0, v2.0.0
+
+  - type: dropdown
+    id: planned_phase
+    attributes:
+      label: Planned Phase
+      description: Select the planned phase for this improvement
+      options:
+        - "None"
+        - "Planning"
+        - "Development"
+        - "Testing"
+        - "Deployment"
+      default: 0
+
+  - type: input
+    id: components
+    attributes:
+      label: Component/s
+      description: Which component(s) does this relate to?
+      placeholder: e.g., UI, Backend, Database
+
+  - type: dropdown
+    id: module_info
+    attributes:
+      label: Module Info
+      description: Select module information
+      options:
+        - "None"
+        - "Please select Module Information"
+        - "Authentication"
+        - "User Management"
+        - "Data Processing"
+        - "Reporting"
+        - "API"
+      default: 0
+
+  - type: input
+    id: assignee
+    attributes:
+      label: Assignee
+      description: Who should be assigned to this improvement?
+      placeholder: @username
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Provide a detailed description of the improvement
+      placeholder: Describe the improvement in detail...
+    validations:
+      required: true
+
+  - type: textarea
+    id: linked_issues
+    attributes:
+      label: Linked Issues
+      description: Reference any related issues
+      placeholder: "Related: #123, #456"
+
+  - type: markdown
+    attributes:
+      value: |
+        ### Attachments
+        You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
