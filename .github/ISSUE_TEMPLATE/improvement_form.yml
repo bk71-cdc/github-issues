@@ -58,19 +58,7 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: priority
-    attributes:
-      label: Priority
-      description: Select the priority level
-      options:
-        - "Major"
-        - "Minor"
-        - "Critical"
-        - "Trivial"
-    validations:
-      required: true
-
+  
   - type: input
     id: affects_version
     attributes:
