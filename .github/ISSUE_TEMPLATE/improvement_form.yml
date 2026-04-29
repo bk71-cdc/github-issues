@@ -86,7 +86,7 @@ body:
       label: Module Info
       description: Select module information
       options:
-        - "None"
+        - "No Module"
         - "ACRF"
         - "Administration"
         - "ADT"
