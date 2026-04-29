@@ -25,9 +25,22 @@ jobs:
             
             // Parse form data from issue body - updated regex to match our template format
             const parseField = (fieldName) => {
-              const regex = new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`);
-              const match = body.match(regex);
-              return match ? match[1].trim() : null;
+              // Try multiple patterns to find the field
+              const patterns = [
+                new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`),
+                new RegExp(`${fieldName}:\\s*([^\n]+)`),
+                new RegExp(`### ${fieldName}\\n\\n([^\n]+)`)
+              ];
+              
+              for (const pattern of patterns) {
+                const match = body.match(pattern);
+                if (match) {
+                  console.log(`✅ Found ${fieldName}: ${match[1].trim()}`);
+                  return match[1].trim();
+                }
+              }
+              console.log(`❌ ${fieldName} not found`);
+              return null;
             };
             
             const projectValue = parseField('Project');
@@ -88,7 +101,13 @@ jobs:
             }
             
             console.log('✅ Found project:', targetProject.title);
-            console.log('📋 Available fields:', targetProject.fields.nodes.map(f => ({ name: f.name, id: f.id })));
+            console.log('📋 Available fields:');
+            targetProject.fields.nodes.forEach(field => {
+              console.log(`  - ${field.name} (ID: ${field.id}, Type: ${field.dataType || 'Unknown'})`);
+              if (field.options) {
+                console.log(`    Options: ${field.options.map(opt => opt.name).join(', ')}`);
+              }
+            });
             
             // Add issue to project
             const addItemMutation = `
@@ -230,3 +249,48 @@ jobs:
             }
             
             console.log('🎉 All project fields updated successfully!');
+            
+            // Final verification - try to read back the values
+            const verifyQuery = `
+              query($itemId: ID!) {
+                node(id: $itemId) {
+                  ... on ProjectV2Item {
+                    id
+                    fieldValues(first: 20) {
+                      nodes {
+                        ... on ProjectV2ItemFieldSingleSelectValue {
+                          field {
+                            ... on ProjectV2FieldCommon {
+                              name
+                            }
+                          }
+                          optionId
+                        }
+                        ... on ProjectV2ItemFieldTextValue {
+                          field {
+                            ... on ProjectV2FieldCommon {
+                              name
+                            }
+                          }
+                          text
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            
+            try {
+              const verifyResult = await github.graphql(verifyQuery, { itemId });
+              console.log('🔍 VERIFICATION - Current field values:');
+              if (verifyResult.node && verifyResult.node.fieldValues) {
+                verifyResult.node.fieldValues.nodes.forEach(fieldValue => {
+                  if (fieldValue.field) {
+                    console.log(`  ${fieldValue.field.name}: ${fieldValue.optionId || fieldValue.text || 'empty'}`);
+                  }
+                });
+              }
+            } catch (error) {
+              console.log('❌ Verification failed:', error.message);
+            }
