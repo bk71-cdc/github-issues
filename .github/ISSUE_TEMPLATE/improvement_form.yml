@@ -1,6 +1,6 @@
 name: Improvement
 description: Suggest an improvement for this project
-title: "[Improvement] "
+title: ""
 labels: improvement
 body:
   - type: dropdown
@@ -10,7 +10,8 @@ body:
       description: Select the project this improvement relates to
       options:
         - eHARS
-        - Other
+        - API
+        - ADT
     validations:
       required: true
 
@@ -20,9 +21,15 @@ body:
       label: Issue Type
       description: Select the type of issue
       options:
-        - "Improvement"
-        - "Enhancement"
-        - "Update"
+        - "bug"
+        - "enhancement"
+        - "documentation"
+        - "duplicate"
+        - "good first issue"
+        - "help wanted"
+        - "invalid"
+        - "question"
+        - "wontfix"
       default: 0
     validations:
       required: true
@@ -69,7 +76,7 @@ body:
       label: Planned Phase
       description: Select the planned phase for this improvement
       options:
-        - "None"
+        - "No Phase"
         - "Planning"
         - "Development"
         - "Testing"
@@ -89,7 +96,7 @@ body:
       label: Module Info
       description: Select module information
       options:
-        - "None"
+        - "No Module"
         - "Please select Module Information"
         - "Authentication"
         - "User Management"
@@ -103,7 +110,7 @@ body:
     attributes:
       label: Assignee
       description: Who should be assigned to this improvement?
-      placeholder: @username
+      placeholder: "@username"
 
   - type: textarea
     id: description
