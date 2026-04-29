@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       issues: write
-      projects: write
+      repository-projects: write
     steps:
       - name: Parse form data and populate projects
         uses: actions/github-script@v7
