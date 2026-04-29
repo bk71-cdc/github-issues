@@ -194,14 +194,3 @@ body:
       label: Attachments
       description: You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
       placeholder: "Describe any files you will attach..."
-
-  - type: markdown
-    attributes:
-      value: |
-        ---
-        
-        **⚠️ Important Notice**: When editing this issue, please maintain the structured format above. 
-        Do not switch to raw Markdown mode as this will break the form template structure.
-        
-        If you need to modify values, please edit the fields directly in the form mode.
-        ---
