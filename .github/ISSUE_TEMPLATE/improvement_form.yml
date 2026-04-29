@@ -85,19 +85,7 @@ body:
       description: Which version(s) should include this fix?
       placeholder: e.g., v1.3.0, v2.0.0
 
-  - type: dropdown
-    id: planned_phase
-    attributes:
-      label: Planned Phase
-      description: Select the planned phase for this improvement
-      options:
-        - "No Phase"
-        - "Planning"
-        - "Development"
-        - "Testing"
-        - "Deployment"
-      default: 0
-
+  
   - type: input
     id: components
     attributes:
