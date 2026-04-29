@@ -8,8 +8,8 @@ jobs:
   populate-project-fields:
     runs-on: ubuntu-latest
     permissions:
-      issues: read
-      contents: read
+      issues: write
+      projects: write
     steps:
       - name: Parse form data and populate projects
         uses: actions/github-script@v7
@@ -19,9 +19,9 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body;
             
-            // Parse form data from issue body
+            // Parse form data from issue body - updated regex to match our template format
             const parseField = (fieldName) => {
-              const regex = new RegExp(`\n### ${fieldName}\n\n([^\n]+)`);
+              const regex = new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`);
               const match = body.match(regex);
               return match ? match[1].trim() : null;
             };
@@ -38,3 +38,178 @@ jobs:
             console.log('Affects Version:', affectsVersion);
             console.log('Fix Version:', fixVersion);
             console.log('Issue Type:', issueType);
+            
+            // Get project information using GraphQL
+            const query = `
+              query($owner: String!, $repo: String!) {
+                repository(owner: $owner, name: $repo) {
+                  projectsV2(first: 10) {
+                    nodes {
+                      id
+                      title
+                      fields(first: 20) {
+                        nodes {
+                          ... on ProjectV2FieldCommon {
+                            id
+                            name
+                          }
+                          ... on ProjectV2SingleSelectField {
+                            id
+                            name
+                            options {
+                              id
+                              name
+                            }
+                          }
+                          ... on ProjectV2TextField {
+                            id
+                            name
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+            
+            const variables = {
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            };
+            
+            const result = await github.graphql(query, variables);
+            const projects = result.repository.projectsV2.nodes;
+            const targetProject = projects.find(p => p.title === 'GitHub_Jira');
+            
+            if (!targetProject) {
+              console.log('❌ GitHub_Jira project not found');
+              return;
+            }
+            
+            console.log('✅ Found project:', targetProject.title);
+            
+            // Add issue to project
+            const addItemMutation = `
+              mutation($projectId: ID!, $contentId: ID!) {
+                addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+                  item {
+                    id
+                  }
+                }
+              }
+            `;
+            
+            const addItemResult = await github.graphql(addItemMutation, {
+              projectId: targetProject.id,
+              contentId: issue.node_id
+            });
+            
+            const itemId = addItemResult.addProjectV2ItemById.item.id;
+            console.log('✅ Issue added to project with item ID:', itemId);
+            
+            // Find field IDs and update values
+            const fields = targetProject.fields.nodes;
+            
+            // Helper function to find field by name
+            const findField = (fieldName) => {
+              return fields.find(f => f.name === fieldName);
+            };
+            
+            // Helper function to find option ID for single select fields
+            const findOptionId = (field, value) => {
+              if (!field.options) return null;
+              const option = field.options.find(opt => opt.name === value);
+              return option ? option.id : null;
+            };
+            
+            // Update Project field
+            if (projectValue) {
+              const projectField = findField('Project');
+              if (projectField) {
+                const optionId = findOptionId(projectField, projectValue);
+                if (optionId) {
+                  await updateSingleSelectField(targetProject.id, itemId, projectField.id, optionId);
+                  console.log('✅ Updated Project field to:', projectValue);
+                } else {
+                  console.log('⚠️ Project option not found:', projectValue);
+                }
+              }
+            }
+            
+            // Update Priority field
+            if (priorityValue) {
+              const priorityField = findField('Priority');
+              if (priorityField) {
+                const optionId = findOptionId(priorityField, priorityValue);
+                if (optionId) {
+                  await updateSingleSelectField(targetProject.id, itemId, priorityField.id, optionId);
+                  console.log('✅ Updated Priority field to:', priorityValue);
+                } else {
+                  console.log('⚠️ Priority option not found:', priorityValue);
+                }
+              }
+            }
+            
+            // Update Affects Version field
+            if (affectsVersion) {
+              const affectsVersionField = findField('Affects Version');
+              if (affectsVersionField) {
+                await updateTextField(targetProject.id, itemId, affectsVersionField.id, affectsVersion);
+                console.log('✅ Updated Affects Version field to:', affectsVersion);
+              }
+            }
+            
+            // Update Fix Version field
+            if (fixVersion) {
+              const fixVersionField = findField('Fix Version');
+              if (fixVersionField) {
+                await updateTextField(targetProject.id, itemId, fixVersionField.id, fixVersion);
+                console.log('✅ Updated Fix Version field to:', fixVersion);
+              }
+            }
+            
+            // Helper functions for field updates
+            async function updateSingleSelectField(projectId, itemId, fieldId, optionId) {
+              const mutation = `
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $optionId: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { singleSelectOptionId: $optionId }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `;
+              
+              await github.graphql(mutation, {
+                projectId, itemId, fieldId, optionId
+              });
+            }
+            
+            async function updateTextField(projectId, itemId, fieldId, text) {
+              const mutation = `
+                mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $text: String!) {
+                  updateProjectV2ItemFieldValue(input: {
+                    projectId: $projectId
+                    itemId: $itemId
+                    fieldId: $fieldId
+                    value: { text: $text }
+                  }) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `;
+              
+              await github.graphql(mutation, {
+                projectId, itemId, fieldId, text
+              });
+            }
+            
+            console.log('🎉 All project fields updated successfully!');
