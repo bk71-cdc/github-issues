@@ -69,7 +69,7 @@ body:
       label: Planned Phase
       description: Select the planned phase for this improvement
       options:
-        - "None"
+        - "No Phase"
         - "Planning"
         - "Development"
         - "Testing"
@@ -89,7 +89,7 @@ body:
       label: Module Info
       description: Select module information
       options:
-        - "None"
+        - "No Module"
         - "Please select Module Information"
         - "Authentication"
         - "User Management"
