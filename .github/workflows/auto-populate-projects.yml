@@ -45,8 +45,8 @@ jobs:
             
             const projectValue = parseField('Project');
             const priorityValue = parseField('Priority');
-            const affectsVersion = parseField('Affects Version/s');
-            const fixVersion = parseField('Fix Version/s');
+            const affectsVersion = parseField('Affects Version');
+            const fixVersion = parseField('Fix Version');
             const issueType = parseField('Issue Type');
             
             console.log('✅ Extracted Values:');
@@ -177,12 +177,9 @@ jobs:
               }
             }
             
-            // Update Affects Version field (try both names)
+            // Update Affects Version field
             if (affectsVersion) {
-              let affectsVersionField = findField('Affects Version/s');
-              if (!affectsVersionField) {
-                affectsVersionField = findField('Affects Version');
-              }
+              const affectsVersionField = findField('Affects Version');
               if (affectsVersionField) {
                 await updateTextField(targetProject.id, itemId, affectsVersionField.id, affectsVersion);
                 console.log('✅ Updated Affects Version field to:', affectsVersion);
@@ -191,12 +188,9 @@ jobs:
               }
             }
             
-            // Update Fix Version field (try both names)
+            // Update Fix Version field
             if (fixVersion) {
-              let fixVersionField = findField('Fix Version/s');
-              if (!fixVersionField) {
-                fixVersionField = findField('Fix Version');
-              }
+              const fixVersionField = findField('Fix Version');
               if (fixVersionField) {
                 await updateTextField(targetProject.id, itemId, fixVersionField.id, fixVersion);
                 console.log('✅ Updated Fix Version field to:', fixVersion);
