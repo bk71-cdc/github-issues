@@ -1,6 +1,6 @@
 name: Improvement
 description: Suggest an improvement for this project
-title: " "
+title: "_"
 labels: improvement
 body:
   - type: dropdown
