@@ -27,9 +27,9 @@ jobs:
             const parseField = (fieldName) => {
               // Try multiple patterns to find the field
               const patterns = [
-                new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`),
-                new RegExp(`${fieldName}:\\s*([^\n]+)`),
-                new RegExp(`### ${fieldName}\\n\\n([^\n]+)`)
+                new RegExp(`### ${fieldName}\\n\\n([^\n]+)`),  // GitHub form format
+                new RegExp(`\\*\\*${fieldName}\\*\\*:\\s*([^\n]+)`),  // Markdown format
+                new RegExp(`${fieldName}:\\s*([^\n]+)`)  // Simple format
               ];
               
               for (const pattern of patterns) {
@@ -93,10 +93,16 @@ jobs:
             
             const result = await github.graphql(query, variables);
             const projects = result.repository.projectsV2.nodes;
+            console.log('🏢 Available projects:');
+            projects.forEach(project => {
+              console.log(`  - ${project.title} (ID: ${project.id})`);
+            });
+            
             const targetProject = projects.find(p => p.title === 'GitHub_Jira');
             
             if (!targetProject) {
               console.log('❌ GitHub_Jira project not found');
+              console.log('⚠️ Available project names:', projects.map(p => p.title));
               return;
             }
             
