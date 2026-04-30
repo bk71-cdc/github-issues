@@ -16,25 +16,6 @@ body:
       required: true
 
   - type: dropdown
-    id: issue_type
-    attributes:
-      label: Issue Type
-      description: Select the type of issue
-      options:
-        - "bug"
-        - "enhancement"
-        - "documentation"
-        - "duplicate"
-        - "good first issue"
-        - "help wanted"
-        - "invalid"
-        - "question"
-        - "wontfix"
-      default: 0
-    validations:
-      required: true
-
-  - type: dropdown
     id: priority
     attributes:
       label: Priority
