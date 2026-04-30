@@ -51,6 +51,15 @@ body:
         - "Release 4.10"
         - "Release 4.10.5"
         - "Release 4.11"
+        - "Release 4.12"
+        - "Release 4.13"
+        - "Release 4.14"
+        - "Release 4.15"
+        - "Release 4.16"
+        - "Release 4.17"
+        - "Release 4.18"
+        - "Release 4.19"
+        - "Release 4.20"
       default: 0
 
   - type: dropdown
@@ -73,6 +82,15 @@ body:
         - "Release 4.10"
         - "Release 4.10.5"
         - "Release 4.11"
+        - "Release 4.12"
+        - "Release 4.13"
+        - "Release 4.14"
+        - "Release 4.15"
+        - "Release 4.16"
+        - "Release 4.17"
+        - "Release 4.18"
+        - "Release 4.19"
+        - "Release 4.20"
       default: 0
 
   
