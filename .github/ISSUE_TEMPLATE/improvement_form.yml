@@ -147,9 +147,9 @@ body:
       default: 0
 
   - type: input
-    id: assignee
+    id: reporter
     attributes:
-      label: Assignee
+      label: Reporter
       description: Who should be assigned to this improvement?
       placeholder: "@username"
 
