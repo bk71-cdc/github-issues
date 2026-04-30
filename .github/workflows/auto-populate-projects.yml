@@ -18,7 +18,7 @@ jobs:
             const issue = context.payload.issue;
             const body = issue.body;
             
-            console.log('📝 Processing issue #' + issue.number);
+            console.log('📝 Processing issue #' + issue.number + ' (Repository-level query v2)');
             
             // Parse form data
             const parseField = (fieldName) => {
@@ -50,7 +50,7 @@ jobs:
             console.log('  Affects Version:', affectsVersion);
             console.log('  Fix Version:', fixVersion);
             
-            // Query user-level projects
+            // Query repository-level projects
             const query = `
               query($owner: String!, $repo: String!) {
                 repository(owner: $owner, name: $repo) {
