@@ -1,13 +1,13 @@
 name: Improvement
-description: Suggest an improvement for this project
+description: Suggest an improvement for this application
 title: "_"
 labels: improvement
 body:
   - type: dropdown
-    id: project
+    id: application
     attributes:
-      label: Project
-      description: Select the project this improvement relates to
+      label: Application
+      description: Select the application this improvement relates to
       options:
         - eHARS
         - API
