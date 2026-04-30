@@ -53,7 +53,7 @@ jobs:
             // Query user-level projects
             const query = `
               query($owner: String!) {
-                user(login: $owner) {
+                organization(login: $owner) {
                   projectsV2(first: 10) {
                     nodes {
                       id
@@ -84,7 +84,7 @@ jobs:
               owner: 'bk71-cdc'
             });
             
-            const projects = result.user.projectsV2.nodes;
+            const projects = result.organization.projectsV2.nodes;
             console.log('🏢 Found projects:', projects.map(p => p.title).join(', '));
             
             const targetProject = projects.find(p => p.title === 'GitHub_Jira');
