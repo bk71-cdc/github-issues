@@ -1,0 +1,225 @@
+name: Feature
+description: Suggest a feature for this application
+title: "_"
+labels: feature
+body:
+  - type: dropdown
+    id: application
+    attributes:
+      label: Application
+      description: Select the application this improvement relates to
+      options:
+        - eHARS
+        - API
+        - ADT
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: Select the priority level
+      options:
+        - "Blocker"
+        - "Critical"
+        - "Major"
+        - "Average"
+        - "Minor"
+      default: 0
+    validations:
+      required: true
+
+  
+  - type: dropdown
+    id: affects_version
+    attributes:
+      label: Affects Version/s
+      description: Which version(s) does this affect?
+      options:
+        - "Release 4.0"
+        - "Release 4.1"
+        - "Release 4.2"
+        - "Release 4.5"
+        - "Release 4.6"
+        - "Release 4.7"
+        - "Release 4.7.1"
+        - "Release 4.8"
+        - "eHARS 4.8.1"
+        - "Release 4.9"
+        - "Release 4.9.1"
+        - "Release 4.10"
+        - "Release 4.10.5"
+        - "Release 4.11"
+        - "Release 4.12"
+        - "Release 4.13"
+        - "Release 4.14"
+        - "Release 4.15"
+        - "Release 4.16"
+        - "Release 4.17"
+        - "Release 4.18"
+        - "Release 4.19"
+        - "Release 4.20"
+      default: 0
+
+  - type: dropdown
+    id: fix_version
+    attributes:
+      label: Fix Version/s
+      description: Which version(s) should include this fix?
+      options:
+        - "Release 4.0"
+        - "Release 4.1"
+        - "Release 4.2"
+        - "Release 4.5"
+        - "Release 4.6"
+        - "Release 4.7"
+        - "Release 4.7.1"
+        - "Release 4.8"
+        - "eHARS 4.8.1"
+        - "Release 4.9"
+        - "Release 4.9.1"
+        - "Release 4.10"
+        - "Release 4.10.5"
+        - "Release 4.11"
+        - "Release 4.12"
+        - "Release 4.13"
+        - "Release 4.14"
+        - "Release 4.15"
+        - "Release 4.16"
+        - "Release 4.17"
+        - "Release 4.18"
+        - "Release 4.19"
+        - "Release 4.20"
+      default: 0
+
+  
+  - type: dropdown
+    id: components
+    attributes:
+      label: Component/s
+      description: Which component(s) does this relate to?
+      options:
+        - "All Document Import"
+        - "Database"
+        - "eHARS User Interface"
+        - "Quality Assurance"
+        - "Requirements"
+      default: 0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module_info
+    attributes:
+      label: Module Info
+      description: Select module information
+      options:
+        - "No Module"
+        - "ACRF"
+        - "Administration"
+        - "ADT"
+        - "Architecture"
+        - "Birth"
+        - "C&A"
+        - "Calculated Variables"
+        - "Cosmetic"
+        - "Data Conversion"
+        - "Data Management"
+        - "Data Storage"
+        - "Data Transfer"
+        - "Database"
+        - "Datasets"
+        - "Death"
+        - "Document Deletion"
+        - "Documentation/Tech Writing"
+        - "Duplicates Processing"
+        - "Edit Checks"
+        - "Edit/Anomaly Checks"
+        - "HARS Document"
+        - "HRI Processing"
+        - "Importing"
+        - "Incidence"
+        - "Incidence Data Related"
+        - "InstallShield"
+        - "Intra State Data Transfer"
+        - "Investigation"
+        - "Lab Document"
+        - "Matching"
+        - "MJP Ownership"
+        - "MPV Calculated Algorithm"
+        - "MPV Hierarchy"
+        - "Name Removal"
+        - "NDP Case Based Dataset"
+        - "NDP Document Dataset"
+        - "NDP SAS De-Duplication"
+        - "NDP SAS MPV Record"
+        - "NDP SAS Pre-Processing"
+        - "NDP SAS Repeated Record"
+        - "NDP SQL Database"
+        - "NDP SQL Processing"
+        - "Other"
+        - "PCRF"
+        - "Person View"
+        - "Person View - Birth History"
+        - "Person View - Calculated Variables"
+        - "Person View - Children Linked to this Person"
+        - "Person View - Clinical"
+        - "Person View - Contacts"
+        - "Person View - COPHI"
+        - "Person View - Death"
+        - "Person View - Demographics"
+        - "Person View - Duplicate Review"
+        - "Person View - Facility"
+        - "Person View - Form Info"
+        - "Person View - HARS Legacy Variables"
+        - "Person View - Header"
+        - "Person View - History"
+        - "Person View - Identification"
+        - "Person View - Incidence Consent"
+        - "Person View - Lab Data"
+        - "Person View - Local Fields"
+        - "Person View - Overall"
+        - "Person View - Treatment/Services"
+        - "PVGen"
+        - "Reports/Logs"
+        - "Sampling"
+        - "SAS Batch Reports"
+        - "Script Requests"
+        - "Searching"
+        - "Source Data"
+        - "System Wide"
+        - "Usability"
+        - "Vocabulary"
+        - "Vocabulary/Lookup Tables"
+      default: 0
+
+  - type: input
+    id: reporter
+    attributes:
+      label: Reporter
+      description: Who should be assigned to this improvement?
+      placeholder: "@username"
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Provide a detailed description of the improvement
+      placeholder: Describe the improvement in detail...
+    validations:
+      required: true
+
+  - type: textarea
+    id: linked_issues
+    attributes:
+      label: Linked Issues
+      description: Reference any related issues
+      placeholder: "Related: #123, #456"
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Attachments
+      description: You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
+      placeholder: "Describe any files you will attach..."
