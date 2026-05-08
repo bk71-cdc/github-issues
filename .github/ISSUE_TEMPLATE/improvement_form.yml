@@ -114,6 +114,7 @@ body:
     attributes:
       label: Module Info
       description: Select module information
+      multiple: true
       options:
         - "No Module"
         - "ACRF"
