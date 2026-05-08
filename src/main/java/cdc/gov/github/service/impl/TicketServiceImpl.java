@@ -685,6 +685,11 @@ public class TicketServiceImpl implements TicketService {
         body.append("**Priority:** ");
         body.append(priority != null && !priority.isEmpty() ? priority : "No response");
         body.append("\n\n");
+
+        // Description field (from improvement_form.yml)
+        body.append("**Description:** ");
+        body.append(description != null && !description.isEmpty() ? description : "No response");
+        body.append("\n\n");
         
         // Affects Version/s field (from improvement_form.yml)
         body.append("**Affects Version/s:** ");
@@ -710,11 +715,7 @@ public class TicketServiceImpl implements TicketService {
         body.append("**Reporter:** ");
         body.append(assignee != null && !assignee.isEmpty() ? assignee : "No response");
         body.append("\n\n");
-        
-        // Description field (from improvement_form.yml)
-        body.append("**Description:** ");
-        body.append(description != null && !description.isEmpty() ? description : "No response");
-        body.append("\n\n");
+
         
         // Linked Issues field (from improvement_form.yml)
         body.append("**Linked Issues:** ");
