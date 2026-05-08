@@ -99,6 +99,7 @@ body:
     attributes:
       label: Component/s
       description: Which component(s) does this relate to?
+      multiple: true
       options:
         - "All Document Import"
         - "Database"
@@ -116,7 +117,6 @@ body:
       description: Select module information
       multiple: true
       options:
-        - "No Module"
         - "ACRF"
         - "Administration"
         - "ADT"
