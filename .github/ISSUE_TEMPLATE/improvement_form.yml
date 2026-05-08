@@ -101,7 +101,7 @@ body:
       description: Which component(s) does this relate to?
       multiple: true
       options:
-        - "None"
+        - "Not Applicable"
         - "All Document Import"
         - "Database"
         - "eHARS User Interface"
@@ -118,7 +118,7 @@ body:
       description: Select module information
       multiple: true
       options:
-        - "None"
+        - "Not Applicable"
         - "ACRF"
         - "Administration"
         - "ADT"
