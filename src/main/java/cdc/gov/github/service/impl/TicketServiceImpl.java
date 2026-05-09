@@ -87,7 +87,7 @@ public class TicketServiceImpl implements TicketService {
                     String issueBody = populateImprovementFormTemplate(
                         issueTitle, "eHARS", "Task", "Average", 
                         "Release 4.20", "Release 4.21", "All Document Import", "No Module", 
-                        "", "This is an auto-generated empty issue.", "", "", "");
+                        "", "This is an auto-generated empty issue.", "", "", "", "", "", "", "", "", "");
                     
                     // Call GitHub API to create issue
                     String[] issueResult = createIssue(repositoryId, issueTitle, issueBody, 
@@ -294,12 +294,32 @@ public class TicketServiceImpl implements TicketService {
                 Row row = sheet.getRow(rowNum);
                 if (row == null) continue;
                 
+                // Extract key field for title prefix
+                String excelIssueId = getCellValue(row, columnMap, "id");
+                String excelTicketId = getCellValue(row, columnMap, "ticket id");
+                String excelKey = getCellValue(row, columnMap, "key");
+                
+                // Use the first non-empty key field found
+                String keyPrefix = "";
+                if (excelIssueId != null && !excelIssueId.isEmpty()) {
+                    keyPrefix = excelIssueId;
+                } else if (excelTicketId != null && !excelTicketId.isEmpty()) {
+                    keyPrefix = excelTicketId;
+                } else if (excelKey != null && !excelKey.isEmpty()) {
+                    keyPrefix = excelKey;
+                }
+                
                 // Extract data from key columns
                 String title = getCellValue(row, columnMap, "summary");
                 System.out.println("Row " + rowNum + " - Title: '" + title + "'");
                 if (title.isEmpty()) {
                     System.out.println("Skipping row " + rowNum + " - empty title");
                     continue;
+                }
+                
+                // Prepend key to title if key exists
+                if (!keyPrefix.isEmpty()) {
+                    title = keyPrefix + ": " + title;
                 }
                 
                 String project = getCellValue(row, columnMap, "project");
@@ -317,6 +337,12 @@ public class TicketServiceImpl implements TicketService {
                 String linkedIssues = getCellValue(row, columnMap, "linked issues");
                 String attachment = getCellValue(row, columnMap, "attachment");
                 String resolution = getCellValue(row, columnMap, "resolution");
+                String created = getCellValue(row, columnMap, "created");
+                String updated = getCellValue(row, columnMap, "updated");
+                String customerName = getCellValue(row, columnMap, "customer name");
+                String helpDeskNumbers = getCellValue(row, columnMap, "help desk number(s)");
+                String duplicateCqId = getCellValue(row, columnMap, "duplicate cq id");
+                String resolved = getCellValue(row, columnMap, "resolved");
                 
                 // Map issue type to label
                 String mappedIssueType = mapIssueTypeLabel(issueType);
@@ -328,7 +354,8 @@ public class TicketServiceImpl implements TicketService {
                 String body = populateImprovementFormTemplate(
                     title, projectValue, mappedIssueType, priority, 
                     affectsVersion, fixVersion, components, moduleInfo, 
-                    assignee, description, linkedIssues, attachment, resolution);
+                    assignee, description, linkedIssues, attachment, resolution,
+                    created, updated, customerName, helpDeskNumbers, duplicateCqId, resolved);
                 
                 // Create GitHub issue with proper labels based on issue type
                 List<String> labels = new ArrayList<>();
@@ -416,11 +443,14 @@ public class TicketServiceImpl implements TicketService {
                 
                 // Try to find issue number from any of these columns
                 String issueNumber = extractIssueNumber(issueId);
+                String originalKey = issueId; // Store the original key value
                 if (issueNumber.isEmpty()) {
                     issueNumber = extractIssueNumber(ticketId);
+                    originalKey = ticketId; // Use ticketId as original key if issueId was empty
                 }
                 if (issueNumber.isEmpty()) {
                     issueNumber = extractIssueNumber(key);
+                    originalKey = key; // Use key as original key if others were empty
                 }
                 
                 if (issueNumber.isEmpty()) {
@@ -430,6 +460,11 @@ public class TicketServiceImpl implements TicketService {
                 
                 // Extract other data from key columns
                 String title = getCellValue(row, columnMap, "title");
+                
+                // Prepend original key to title if title exists and original key is not empty
+                if (!title.isEmpty() && originalKey != null && !originalKey.isEmpty()) {
+                    title = originalKey + " : " + title;
+                }
                 String project = getCellValue(row, columnMap, "project");
                 String issueType = getCellValue(row, columnMap, "issue type");
                 String priority = getCellValue(row, columnMap, "priority");
@@ -443,6 +478,12 @@ public class TicketServiceImpl implements TicketService {
                 String linkedIssues = getCellValue(row, columnMap, "linked issues");
                 String attachment = getCellValue(row, columnMap, "attachment");
                 String resolution = getCellValue(row, columnMap, "resolution");
+                String created = getCellValue(row, columnMap, "created");
+                String updated = getCellValue(row, columnMap, "updated");
+                String customerName = getCellValue(row, columnMap, "customer name");
+                String helpDeskNumbers = getCellValue(row, columnMap, "help desk number(s)");
+                String duplicateCqId = getCellValue(row, columnMap, "duplicate cq id");
+                String resolved = getCellValue(row, columnMap, "resolved");
                 
                 // Map issue type to label
                 String mappedIssueType = mapIssueTypeLabel(issueType);
@@ -452,7 +493,8 @@ public class TicketServiceImpl implements TicketService {
                     title.isEmpty() ? "Updated Issue #" + issueNumber : title, 
                     project, mappedIssueType, priority, 
                     affectsVersion, fixVersion, components, moduleInfo, 
-                    assignee, description, linkedIssues, attachment, resolution);
+                    assignee, description, linkedIssues, attachment, resolution,
+                    created, updated, customerName, helpDeskNumbers, duplicateCqId, resolved);
                 
                 // Update existing GitHub issue
                 try {
@@ -672,7 +714,8 @@ public class TicketServiceImpl implements TicketService {
     
     private String populateImprovementFormTemplate(String title, String project, String issueType, String priority, 
             String affectsVersion, String fixVersion, String components, String moduleInfo, 
-            String assignee, String description, String linkedIssues, String attachments, String resolution) {
+            String assignee, String description, String linkedIssues, String attachments, String resolution,
+            String created, String updated, String customerName, String helpDeskNumbers, String duplicateCqId, String resolved) {
         
         StringBuilder body = new StringBuilder();
         
@@ -730,6 +773,36 @@ public class TicketServiceImpl implements TicketService {
         // Resolution field
         body.append("**Resolution:** ");
         body.append(resolution != null && !resolution.isEmpty() ? resolution : "No response");
+        body.append("\n\n");
+        
+        // Created field
+        body.append("**Created:** ");
+        body.append(created != null && !created.isEmpty() ? created : "No response");
+        body.append("\n\n");
+        
+        // Updated field
+        body.append("**Updated:** ");
+        body.append(updated != null && !updated.isEmpty() ? updated : "No response");
+        body.append("\n\n");
+        
+        // Customer Name field
+        body.append("**Customer Name:** ");
+        body.append(customerName != null && !customerName.isEmpty() ? customerName : "No response");
+        body.append("\n\n");
+        
+        // Help Desk Number(s) field
+        body.append("**Help Desk Number(s):** ");
+        body.append(helpDeskNumbers != null && !helpDeskNumbers.isEmpty() ? helpDeskNumbers : "No response");
+        body.append("\n\n");
+        
+        // Duplicate CQ ID field
+        body.append("**Duplicate CQ ID:** ");
+        body.append(duplicateCqId != null && !duplicateCqId.isEmpty() ? duplicateCqId : "No response");
+        body.append("\n\n");
+        
+        // Resolved field
+        body.append("**Resolved:** ");
+        body.append(resolved != null && !resolved.isEmpty() ? resolved : "No response");
         body.append("\n\n");
         
         return body.toString();
