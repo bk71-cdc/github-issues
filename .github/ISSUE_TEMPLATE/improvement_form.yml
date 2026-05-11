@@ -30,6 +30,15 @@ body:
     validations:
       required: true
 
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Provide a detailed description of the improvement
+      placeholder: Describe the improvement in detail...
+    validations:
+      required: true
+
   
   - type: dropdown
     id: affects_version
@@ -204,14 +213,6 @@ body:
       description: Who should be assigned to this improvement?
       placeholder: "@username"
 
-  - type: textarea
-    id: description
-    attributes:
-      label: Description
-      description: Provide a detailed description of the improvement
-      placeholder: Describe the improvement in detail...
-    validations:
-      required: true
 
   - type: textarea
     id: linked_issues
@@ -219,13 +220,6 @@ body:
       label: Linked Issues
       description: Reference any related issues
       placeholder: "Related: #123, #456"
-
-  - type: textarea
-    id: attachments
-    attributes:
-      label: Attachments
-      description: You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
-      placeholder: "Describe any files you will attach..."
 
   - type: input
     id: customer_name
@@ -281,3 +275,10 @@ body:
       label: Resolved (Resolution Date)
       description: Enter resolution date (optional)
       placeholder: "YYYY-MM-DD"
+
+  - type: textarea
+    id: attachments
+    attributes:
+      label: Attachments
+      description: You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
+      placeholder: "Describe any files you will attach..."
