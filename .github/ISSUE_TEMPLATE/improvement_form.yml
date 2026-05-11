@@ -226,3 +226,58 @@ body:
       label: Attachments
       description: You can attach files directly to this issue after creating it using the attachment area at the bottom of the page.
       placeholder: "Describe any files you will attach..."
+
+  - type: input
+    id: customer_name
+    attributes:
+      label: Customer Name
+      description: Enter the customer name (optional)
+      placeholder: "Customer name..."
+
+  - type: input
+    id: help_desk_numbers
+    attributes:
+      label: Help Desk Number(s)
+      description: Enter help desk numbers (optional)
+      placeholder: "Help desk numbers..."
+
+  - type: input
+    id: duplicate_cq_id
+    attributes:
+      label: Duplicate ID
+      description: Enter duplicate CQ ID (optional)
+      placeholder: "Duplicate ID..."
+
+  - type: dropdown
+    id: resolution
+    attributes:
+      label: Resolution
+      description: Select the resolution status (optional)
+      options:
+        - Fixed
+        - "Won't Fix"
+        - Duplicate
+        - Incomplete
+        - "Cannot Reproduce"
+        - "Working As Desired (Not a Defect)"
+
+  - type: input
+    id: created_date
+    attributes:
+      label: Created
+      description: Enter creation date (optional)
+      placeholder: "YYYY-MM-DD"
+
+  - type: input
+    id: updated_date
+    attributes:
+      label: Updated
+      description: Enter last updated date (optional)
+      placeholder: "YYYY-MM-DD"
+
+  - type: input
+    id: resolved_date
+    attributes:
+      label: Resolved (Resolution Date)
+      description: Enter resolution date (optional)
+      placeholder: "YYYY-MM-DD"
