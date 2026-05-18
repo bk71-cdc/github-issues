@@ -18,14 +18,12 @@ public class TicketServiceImpl implements TicketService {
     
     private static final String GITHUB_API_URL = "https://api.github.com/graphql";
     private static final String GITHUB_TOKEN = "";
-    private static final String OWNER = "bk71-cdc";
-    private static final String REPO = "github-issues";
-    private static final String PROJECT_NAME = "@GitHub_Jira";
+    private static final String OWNER = "cdcent";
+    private static final String REPO = "NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY";
     
     private final OkHttpClient client = new OkHttpClient();
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private String repositoryId = "";
-    private String projectId = "";
     private String ownerId = "";
 
     @Override
@@ -97,8 +95,6 @@ public class TicketServiceImpl implements TicketService {
                         String issueId = issueResult[0];
                         String issueNumber = issueResult[1];
                         createdIssueIds.add(issueId);
-                        // Add to project
-                        addIssueToProject(projectId, issueId, "Todo", "Task", "Release 4.21", "", "", "eHARS");
                     } else {
                         response.addError("Failed to create issue #" + (i + 1));
                     }
@@ -159,25 +155,57 @@ public class TicketServiceImpl implements TicketService {
         
         return response;
     }
-    
+
+    public LoadTicketsResponse processAdtFromExcel(String fileName) {
+        LoadTicketsResponse response = new LoadTicketsResponse();
+
+        try {
+            // Initialize repository info
+            initializeRepositoryInfo();
+
+            // Get the Excel file from resources or use provided path
+            InputStream excelStream = getExcelInputStream(fileName);
+            if (excelStream == null) {
+                response.setMessage("Excel file not found: " + fileName);
+                response.addError("File not found: " + fileName);
+                return response;
+            }
+
+            // Process the Excel file for ADT entries only
+            List<String> createdIssueIds = processAdtExcelFile(excelStream, response);
+
+            response.setTotalCount(createdIssueIds.size());
+            response.setSuccessCount(createdIssueIds.size());
+            response.setFailureCount(0);
+            response.setIssueIds(createdIssueIds);
+            response.setMessage("Successfully created " + createdIssueIds.size() + " ADT issues from " + fileName);
+
+        } catch (Exception e) {
+            response.setMessage("Error processing ADT tickets from Excel: " + e.getMessage());
+            response.addError("Exception: " + e.getMessage());
+            response.setTotalCount(0);
+            response.setSuccessCount(0);
+            response.setFailureCount(1);
+        }
+
+        return response;
+    }
+
     private void initializeRepositoryInfo() throws IOException {
         if (repositoryId.isEmpty()) {
             System.out.println("Initializing repository info...");
             System.out.println("Owner: " + OWNER);
             System.out.println("Repo: " + REPO);
-            System.out.println("Project: " + PROJECT_NAME);
             System.out.println("Token: " + (GITHUB_TOKEN.length() > 10 ? GITHUB_TOKEN.substring(0, 10) + "..." : "INVALID"));
             
             try {
-                JsonObject repoInfo = getRepoInfo(OWNER, REPO, PROJECT_NAME);
+                JsonObject repoInfo = getRepoInfo(OWNER, REPO);
                 System.out.println("Repo info response: " + repoInfo.toString());
                 
                 repositoryId = repoInfo.get("repoId").getAsString();
-                projectId = repoInfo.get("projectId").getAsString();
                 ownerId = repoInfo.get("ownerId").getAsString();
                 
                 System.out.println("Repository ID: " + repositoryId);
-                System.out.println("Project ID: " + projectId);
                 System.out.println("Owner ID: " + ownerId);
             } catch (Exception e) {
                 System.err.println("Error initializing repository info: " + e.getMessage());
@@ -344,6 +372,39 @@ public class TicketServiceImpl implements TicketService {
                 String duplicateCqId = getCellValue(row, columnMap, "duplicate cq id");
                 String resolved = getCellValue(row, columnMap, "resolved");
                 
+                // Check if Module Info is "ADT" - if so, create empty issue
+                if ("ADT".equalsIgnoreCase(moduleInfo)) {
+                    try {
+                        String emptyIssueTitle = !keyPrefix.isEmpty() ? keyPrefix + ": Empty Issue" : "Empty Issue";
+                        String emptyIssueBody = ""; // Only title, no other template data
+
+                        String[] issueResult = createIssue(repositoryId, emptyIssueTitle, emptyIssueBody,
+                            Arrays.asList("improvement"), new ArrayList<>(), "");
+
+                        if (issueResult != null && issueResult.length == 2) {
+                            String issueId = issueResult[0];
+                            String issueNumber = issueResult[1];
+                            createdIssueIds.add("Issue #" + issueNumber);
+
+                            // Close issue if status is "closed" from Excel
+                            if ("closed".equalsIgnoreCase(status)) {
+                                try {
+                                    closeIssue(issueId);
+                                } catch (Exception e) {
+                                    System.out.println("Warning: Failed to close ADT issue #" + issueNumber + ": " + e.getMessage());
+                                }
+                            }
+
+                            System.out.println("Created empty issue for ADT module: " + emptyIssueTitle);
+                        } else {
+                            response.addError("Failed to create empty issue for ADT module in row " + rowNum);
+                        }
+                    } catch (Exception e) {
+                        response.addError("Error creating empty issue for ADT module in row " + rowNum + ": " + e.getMessage());
+                    }
+                    continue; // Skip normal processing for this row
+                }
+
                 // Map issue type to label
                 String mappedIssueType = mapIssueTypeLabel(issueType);
                 
@@ -410,6 +471,212 @@ public class TicketServiceImpl implements TicketService {
         return createdIssueIds;
     }
     
+    private List<String> processAdtExcelFile(InputStream excelStream, LoadTicketsResponse response) throws IOException {
+        List<String> createdIssueIds = new ArrayList<>();
+
+        Workbook workbook;
+        try {
+            // Detect Excel format and use appropriate workbook
+            if (excelStream.markSupported()) {
+                excelStream.mark(0);
+                // Try to detect if it's XLS or XLSX
+                byte[] header = new byte[8];
+                int bytesRead = excelStream.read(header);
+                excelStream.reset();
+
+                // Check for XLS signature (OLE2 format)
+                if (bytesRead >= 8 &&
+                    header[0] == 0xD0 && header[1] == 0xCF &&
+                    header[2] == 0x11 && header[3] == 0xE0 &&
+                    header[4] == 0xA1 && header[5] == 0xB1 &&
+                    header[6] == 0x1A && header[7] == 0xE1) {
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                    System.out.println("Detected XLS format, using HSSFWorkbook");
+                } else {
+                    // Try XLSX first, if it fails, fall back to XLS
+                    try {
+                        workbook = new XSSFWorkbook(excelStream);
+                        System.out.println("Detected XLSX format, using XSSFWorkbook");
+                    } catch (Exception xlsxException) {
+                        // Reset stream and try XLS
+                        excelStream.reset();
+                        workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                        System.out.println("XLSX failed, falling back to XLS format with HSSFWorkbook");
+                    }
+                }
+            } else {
+                // If stream doesn't support mark, try XLSX first, then XLS
+                try {
+                    workbook = new XSSFWorkbook(excelStream);
+                    System.out.println("Stream doesn't support mark, trying XSSFWorkbook first - succeeded");
+                } catch (Exception xlsxException) {
+                    // Create a fresh stream for XLS
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                    System.out.println("XSSFWorkbook failed, using HSSFWorkbook");
+                }
+            }
+        } catch (Exception e) {
+            throw new IOException("Failed to create workbook: " + e.getMessage(), e);
+        }
+
+        try {
+            Sheet sheet = workbook.getSheetAt(0);
+
+            // Find header row and capture ALL column names
+            Row headerRow = sheet.getRow(3); // Header is on row 4 (0-indexed is 3)
+            List<String> columnNames = new ArrayList<>();
+            Map<String, Integer> columnMap = new HashMap<>();
+
+            // Capture all column names and find key columns
+            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                Cell cell = headerRow.getCell(i);
+                if (cell != null && cell.getCellType() == CellType.STRING) {
+                    String columnName = cell.getStringCellValue().trim();
+                    columnNames.add(columnName);
+                    columnMap.put(columnName.toLowerCase(), i);
+                }
+            }
+
+            System.out.println("Found columns: " + columnNames);
+            System.out.println("Column map: " + columnMap);
+            System.out.println("Total rows in sheet: " + sheet.getLastRowNum());
+
+            // Process data rows, starting from row 5 (0-indexed is 4)
+            for (int rowNum = 4; rowNum <= sheet.getLastRowNum(); rowNum++) {
+                Row row = sheet.getRow(rowNum);
+                if (row == null) continue;
+
+                // Extract key field for title prefix
+                String excelIssueId = getCellValue(row, columnMap, "id");
+                String excelTicketId = getCellValue(row, columnMap, "ticket id");
+                String excelKey = getCellValue(row, columnMap, "key");
+
+                // Use the first non-empty key field found
+                String keyPrefix = "";
+                if (excelIssueId != null && !excelIssueId.isEmpty()) {
+                    keyPrefix = excelIssueId;
+                } else if (excelTicketId != null && !excelTicketId.isEmpty()) {
+                    keyPrefix = excelTicketId;
+                } else if (excelKey != null && !excelKey.isEmpty()) {
+                    keyPrefix = excelKey;
+                }
+
+                // Extract data from key columns
+                String title = getCellValue(row, columnMap, "summary");
+                System.out.println("Row " + rowNum + " - Title: '" + title + "'");
+                if (title.isEmpty()) {
+                    System.out.println("Skipping row " + rowNum + " - empty title");
+                    continue;
+                }
+
+                // Prepend key to title if key exists
+                if (!keyPrefix.isEmpty()) {
+                    title = keyPrefix + ": " + title;
+                }
+
+                String project = getCellValue(row, columnMap, "project");
+                String issueType = getCellValue(row, columnMap, "issue type");
+                String priority = getCellValue(row, columnMap, "priority");
+                String affectsVersion = getCellValue(row, columnMap, "affects version/s");
+                String fixVersion = getCellValue(row, columnMap, "fix version/s");
+                String components = getCellValue(row, columnMap, "component/s");
+                String moduleInfo = getCellValue(row, columnMap, "module info");
+                String assignee = getCellValue(row, columnMap, "assignee");
+                String reporter = getCellValue(row, columnMap, "reporter");
+                String status = getCellValue(row, columnMap, "status");
+                String description = getCellValue(row, columnMap, "description");
+                String comments = getCellValue(row, columnMap, "comments");
+                String linkedIssues = getCellValue(row, columnMap, "linked issues");
+                String attachment = getCellValue(row, columnMap, "attachment");
+                String resolution = getCellValue(row, columnMap, "resolution");
+                String created = getCellValue(row, columnMap, "created");
+                String updated = getCellValue(row, columnMap, "updated");
+                String customerName = getCellValue(row, columnMap, "customer name");
+                String helpDeskNumbers = getCellValue(row, columnMap, "help desk number(s)");
+                String duplicateCqId = getCellValue(row, columnMap, "duplicate cq id");
+                String resolved = getCellValue(row, columnMap, "resolved");
+
+                // Check if Module Info is "ADT" - if so, create full issue, otherwise skip
+                if (!"ADT".equalsIgnoreCase(moduleInfo)) {
+                    System.out.println("Skipping non-ADT row " + rowNum + " - Module Info: " + moduleInfo);
+                    continue;
+                }
+
+                System.out.println("Processing ADT row " + rowNum);
+
+                // Map issue type to label
+                String mappedIssueType = mapIssueTypeLabel(issueType);
+
+                // Set default project since not in Excel headers
+                String projectValue = project != null && !project.isEmpty() ? project : "eHARS";
+
+                // Create issue body using improvement_form.yml structure
+                String body = populateImprovementFormTemplate(
+                    title, projectValue, mappedIssueType, priority,
+                    affectsVersion, fixVersion, components, moduleInfo,
+                    assignee, description, linkedIssues, attachment, resolution,
+                    created, updated, customerName, helpDeskNumbers, duplicateCqId, resolved);
+
+                // Create GitHub issue with proper labels based on issue type
+                List<String> labels = new ArrayList<>();
+                if (!mappedIssueType.isEmpty()) {
+                    labels.add(mappedIssueType);
+                } else {
+                    labels.add("enhancement"); // default if issue type mapping fails
+                }
+
+                List<String> assignees = new ArrayList<>();
+                if (!assignee.isEmpty()) {
+                    String[] assigneeList = assignee.split(",");
+                    for (String a : assigneeList) {
+                        assignees.add(a.trim());
+                    }
+                }
+
+                // Create full issue for ADT entries
+                try {
+                    String[] issueResult = createIssue(repositoryId, title, body, labels, assignees, "");
+                    if (issueResult != null && issueResult.length == 2) {
+                        String issueId = issueResult[0];
+                        String issueNumber = issueResult[1];
+
+                        // Close issue if status is "closed"
+                        if ("closed".equalsIgnoreCase(status)) {
+                            try {
+                                closeIssue(issueId);
+                            } catch (Exception e) {
+                                System.out.println("Warning: Failed to close issue #" + issueNumber + ": " + e.getMessage());
+                            }
+                        }
+
+                        createdIssueIds.add("Issue #" + issueNumber);
+
+                        // Add second issue body with comments as very last step
+                        if (comments != null && !comments.isEmpty()) {
+                            try {
+                                addSecondIssueBody(issueId, issueNumber, comments);
+                            } catch (Exception e) {
+                                System.out.println("Warning: Failed to add second issue body to issue #" + issueNumber + ": " + e.getMessage());
+                            }
+                        }
+
+                        System.out.println("Created full issue for ADT module: " + title);
+                    } else {
+                        response.addError("Failed to create issue for ADT row " + rowNum + ": " + title);
+                    }
+                } catch (Exception e) {
+                    response.addError("Error creating issue for ADT row " + rowNum + ": " + e.getMessage());
+                }
+            }
+
+            workbook.close();
+        } catch (Exception e) {
+            throw new IOException("Failed to process ADT Excel file: " + e.getMessage(), e);
+        }
+
+        return createdIssueIds;
+    }
+
     private List<String> processExcelFileForUpdates(InputStream excelStream, LoadTicketsResponse response) throws IOException {
         List<String> updatedIssueIds = new ArrayList<>();
         
@@ -702,6 +969,7 @@ public class TicketServiceImpl implements TicketService {
             case "feature":
             case "feature request":
             case "improvement":
+            case "new feature":
                 return "enhancement";
             case "task":
                 return "task";
@@ -796,31 +1064,29 @@ public class TicketServiceImpl implements TicketService {
         body.append("\n\n");
         
         // Duplicate CQ ID field
-        body.append("**Duplicate CQ ID:** ");
-        body.append(duplicateCqId != null && !duplicateCqId.isEmpty() ? duplicateCqId : "No response");
+        body.append("**Duplicate ID:** ");
+        if (duplicateCqId != null && !duplicateCqId.isEmpty()) {
+            body.append("#").append(duplicateCqId);
+        } else {
+            body.append("No response");
+        }
         body.append("\n\n");
         
         // Resolved field
-        body.append("**Resolved:** ");
+        body.append("**Resolution Date:** ");
         body.append(resolved != null && !resolved.isEmpty() ? resolved : "No response");
         body.append("\n\n");
         
         return body.toString();
     }
     
-    private JsonObject getRepoInfo(String owner, String repo, String projectName) throws IOException {
+    private JsonObject getRepoInfo(String owner, String repo) throws IOException {
         String query = String.format("""
         	    query($owner: String!, $repo: String!) {
-        	      user(login: $owner) {
-        	        id
-        	      }
         	      repository(owner: $owner, name: $repo) {
         	        id
-        	        projectsV2(first: 10) {
-        	          nodes {
-        	            id
-        	            title
-        	          }
+        	        owner {
+        	          id
         	        }
         	      }
         	    }
@@ -832,28 +1098,43 @@ public class TicketServiceImpl implements TicketService {
         
         JsonObject response = executeGraphQL(query, variables);
         
-        JsonObject userObj = response.getAsJsonObject("data").getAsJsonObject("user");
-        JsonObject repoObj = response.getAsJsonObject("data").getAsJsonObject("repository");
+        // Check for GraphQL errors
+        if (response.has("errors")) {
+            JsonArray errors = response.getAsJsonArray("errors");
+            StringBuilder errorMessages = new StringBuilder();
+            for (JsonElement error : errors) {
+                JsonObject errorObj = error.getAsJsonObject();
+                errorMessages.append(errorObj.get("message").getAsString()).append("; ");
+            }
+            throw new IOException("GraphQL errors: " + errorMessages.toString());
+        }
+
+        JsonElement data = response.get("data");
+        if (data == null || data.isJsonNull()) {
+            throw new IOException("No data returned from GraphQL query");
+        }
+
+        JsonObject dataObj = data.getAsJsonObject();
+        JsonElement repoElement = dataObj.get("repository");
+
+        if (repoElement == null || repoElement.isJsonNull()) {
+            throw new IOException("Repository not found: " + owner + "/" + repo);
+        }
+
+        JsonObject repoObj = repoElement.getAsJsonObject();
+        JsonElement ownerElement = repoObj.get("owner");
+
+        if (ownerElement == null || ownerElement.isJsonNull()) {
+            throw new IOException("Owner not found for repository: " + owner + "/" + repo);
+        }
+
+        JsonObject ownerObj = ownerElement.getAsJsonObject();
         
         String repoId = repoObj.get("id").getAsString();
-        String ownerId = userObj.get("id").getAsString();
-        
-        // Get project ID
-        String projectId = null;
-        for (JsonElement projectEl : repoObj.getAsJsonObject("projectsV2").getAsJsonArray("nodes")) {
-            JsonObject project = projectEl.getAsJsonObject();
-            if (project.get("title").getAsString().equalsIgnoreCase(projectName)) {
-                projectId = project.get("id").getAsString();
-                break;
-            }
-        }
-        if (projectId == null) {
-            throw new IllegalStateException("Project '" + projectName + "' not found.");
-        }
+        String ownerId = ownerObj.get("id").getAsString();
         
         JsonObject result = new JsonObject();
         result.addProperty("repoId", repoId);
-        result.addProperty("projectId", projectId);
         result.addProperty("ownerId", ownerId);
         return result;
     }
@@ -1029,7 +1310,7 @@ public class TicketServiceImpl implements TicketService {
         if (labels == null || labels.isEmpty()) return;
         
         // Use REST API to add labels by name
-        String url = String.format("https://api.github.com/repos/bk71-cdc/github-issues/issues/%s/labels", issueNumber);
+        String url = String.format("https://api.github.com/repos/cdcent/NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY/issues/%s/labels", issueNumber);
         
         JsonArray labelsArray = new JsonArray();
         for (String label : labels) {
@@ -1056,32 +1337,7 @@ public class TicketServiceImpl implements TicketService {
             }
         }
     }
-    
-        
-    private void addIssueToProject(String projectId, String issueId, String status, String issueType, String fixVersion, String startDate, String affectsVersion, String project) throws IOException {
-        // This is a simplified implementation
-        // In a real implementation, you would need to get the field IDs and update them
-        
-        String mutation = String.format("""
-            mutation($input: AddProjectV2ItemByIdInput!) {
-              addProjectV2ItemById(input: $input) {
-                item {
-                  id
-                }
-              }
-            }
-            """);
-        
-        JsonObject input = new JsonObject();
-        input.addProperty("projectId", projectId);
-        input.addProperty("contentId", issueId);
-        
-        JsonObject variables = new JsonObject();
-        variables.add("input", input);
-        
-        executeGraphQL(mutation, variables);
-    }
-    
+
     private JsonObject executeGraphQL(String query) throws IOException {
         return executeGraphQL(query, null);
     }
