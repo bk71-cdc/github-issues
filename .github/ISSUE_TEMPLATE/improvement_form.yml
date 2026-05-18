@@ -15,21 +15,6 @@ body:
     validations:
       required: true
 
-  - type: dropdown
-    id: priority
-    attributes:
-      label: Priority
-      description: Select the priority level
-      options:
-        - "Blocker"
-        - "Critical"
-        - "Major"
-        - "Average"
-        - "Minor"
-      default: 0
-    validations:
-      required: true
-
   - type: textarea
     id: description
     attributes:
@@ -39,36 +24,16 @@ body:
     validations:
       required: true
 
-  
+
   - type: dropdown
     id: affects_version
     attributes:
       label: Affects Version/s
       description: Which version(s) does this affect?
       options:
-        - "Release 4.0"
-        - "Release 4.1"
-        - "Release 4.2"
-        - "Release 4.5"
-        - "Release 4.6"
-        - "Release 4.7"
-        - "Release 4.7.1"
-        - "Release 4.8"
-        - "eHARS 4.8.1"
-        - "Release 4.9"
-        - "Release 4.9.1"
-        - "Release 4.10"
-        - "Release 4.10.5"
-        - "Release 4.11"
-        - "Release 4.12"
-        - "Release 4.13"
-        - "Release 4.14"
-        - "Release 4.15"
-        - "Release 4.16"
+        - "Release 4.16.1"
         - "Release 4.17"
         - "Release 4.18"
-        - "Release 4.19"
-        - "Release 4.20"
       default: 0
 
   - type: dropdown
@@ -77,32 +42,13 @@ body:
       label: Fix Version/s
       description: Which version(s) should include this fix?
       options:
-        - "Release 4.0"
-        - "Release 4.1"
-        - "Release 4.2"
-        - "Release 4.5"
-        - "Release 4.6"
-        - "Release 4.7"
-        - "Release 4.7.1"
-        - "Release 4.8"
-        - "eHARS 4.8.1"
-        - "Release 4.9"
-        - "Release 4.9.1"
-        - "Release 4.10"
-        - "Release 4.10.5"
-        - "Release 4.11"
-        - "Release 4.12"
-        - "Release 4.13"
-        - "Release 4.14"
-        - "Release 4.15"
-        - "Release 4.16"
         - "Release 4.17"
         - "Release 4.18"
         - "Release 4.19"
         - "Release 4.20"
       default: 0
 
-  
+
   - type: dropdown
     id: components
     attributes:
@@ -110,12 +56,11 @@ body:
       description: Which component(s) does this relate to?
       multiple: true
       options:
-        - "Not Applicable"
+        - "Requirements"
         - "All Document Import"
         - "Database"
         - "eHARS User Interface"
         - "Quality Assurance"
-        - "Requirements"
       default: 0
     validations:
       required: true
@@ -127,7 +72,7 @@ body:
       description: Select module information
       multiple: true
       options:
-        - "Not Applicable"
+        - "Usability"
         - "ACRF"
         - "Administration"
         - "ADT"
@@ -135,7 +80,6 @@ body:
         - "Birth"
         - "C&A"
         - "Calculated Variables"
-        - "Cosmetic"
         - "Data Conversion"
         - "Data Management"
         - "Data Storage"
@@ -149,27 +93,12 @@ body:
         - "Edit Checks"
         - "Edit/Anomaly Checks"
         - "HARS Document"
-        - "HRI Processing"
         - "Importing"
-        - "Incidence"
-        - "Incidence Data Related"
         - "InstallShield"
-        - "Intra State Data Transfer"
         - "Investigation"
         - "Lab Document"
-        - "Matching"
         - "MJP Ownership"
-        - "MPV Calculated Algorithm"
-        - "MPV Hierarchy"
         - "Name Removal"
-        - "NDP Case Based Dataset"
-        - "NDP Document Dataset"
-        - "NDP SAS De-Duplication"
-        - "NDP SAS MPV Record"
-        - "NDP SAS Pre-Processing"
-        - "NDP SAS Repeated Record"
-        - "NDP SQL Database"
-        - "NDP SQL Processing"
         - "Other"
         - "PCRF"
         - "Person View"
@@ -195,13 +124,11 @@ body:
         - "Person View - Treatment/Services"
         - "PVGen"
         - "Reports/Logs"
-        - "Sampling"
         - "SAS Batch Reports"
         - "Script Requests"
         - "Searching"
         - "Source Data"
         - "System Wide"
-        - "Usability"
         - "Vocabulary"
         - "Vocabulary/Lookup Tables"
       default: 0
@@ -210,23 +137,8 @@ body:
     id: reporter
     attributes:
       label: Reporter
-      description: Who should be assigned to this improvement?
-      placeholder: "@username"
-
-
-  - type: textarea
-    id: linked_issues
-    attributes:
-      label: Linked Issues
-      description: Reference any related issues
-      placeholder: "Related: #123, #456"
-
-  - type: input
-    id: customer_name
-    attributes:
-      label: Customer Name
-      description: Enter the customer name (optional)
-      placeholder: "Customer name..."
+      description: Who Reported this issue?
+      placeholder: "i.e: Customer, Jurisdiction, etc."
 
   - type: input
     id: help_desk_numbers
@@ -235,46 +147,12 @@ body:
       description: Enter help desk numbers (optional)
       placeholder: "Help desk numbers..."
 
-  - type: input
-    id: duplicate_cq_id
+  - type: textarea
+    id: linked_issues
     attributes:
-      label: Duplicate ID
-      description: Enter duplicate CQ ID (optional)
-      placeholder: "Duplicate ID..."
-
-  - type: dropdown
-    id: resolution
-    attributes:
-      label: Resolution
-      description: Select the resolution status (optional)
-      options:
-        - Fixed
-        - "Won't Fix"
-        - Duplicate
-        - Incomplete
-        - "Cannot Reproduce"
-        - "Working As Desired (Not a Defect)"
-
-  - type: input
-    id: created_date
-    attributes:
-      label: Created
-      description: Enter creation date (optional)
-      placeholder: "YYYY-MM-DD"
-
-  - type: input
-    id: updated_date
-    attributes:
-      label: Updated
-      description: Enter last updated date (optional)
-      placeholder: "YYYY-MM-DD"
-
-  - type: input
-    id: resolved_date
-    attributes:
-      label: Resolved (Resolution Date)
-      description: Enter resolution date (optional)
-      placeholder: "YYYY-MM-DD"
+      label: Linked/Duplicate Issues
+      description: Reference any related issues
+      placeholder: "Related: #123, #456"
 
   - type: textarea
     id: attachments
