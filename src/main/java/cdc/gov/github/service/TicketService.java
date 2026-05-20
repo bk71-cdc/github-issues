@@ -6,4 +6,6 @@ public interface TicketService {
     LoadTicketsResponse loadTicketsFromExcel(String fileName);
     LoadTicketsResponse createEmptyIssues(int numberOfIssues);
    // LoadTicketsResponse updateTicketsFromExcel(String fileName);
+
+    LoadTicketsResponse loadTicketsADT(String fileName);
 }

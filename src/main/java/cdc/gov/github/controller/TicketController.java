@@ -99,4 +99,30 @@ public class TicketController {
             return ResponseEntity.internalServerError().body(errorResponse);
         }
     }
+
+    @PostMapping("/loadTicketsADT")
+    public ResponseEntity<LoadTicketsResponse> loadTicketsADT(@RequestBody LoadTicketsRequest request) {
+        try {
+            if (!request.isValid()) {
+                LoadTicketsResponse errorResponse = new LoadTicketsResponse();
+                errorResponse.setMessage("fileName is required");
+                errorResponse.setTotalCount(0);
+                errorResponse.setSuccessCount(0);
+                errorResponse.setFailureCount(0);
+                return ResponseEntity.badRequest().body(errorResponse);
+            }
+
+            LoadTicketsResponse response = ticketService.loadTicketsADT(request.getFileName());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            LoadTicketsResponse errorResponse = new LoadTicketsResponse();
+            errorResponse.setMessage("Internal server error: " + e.getMessage());
+            errorResponse.setTotalCount(0);
+            errorResponse.setSuccessCount(0);
+            errorResponse.setFailureCount(0);
+            errorResponse.addError("Controller error: " + e.getMessage());
+            return ResponseEntity.internalServerError().body(errorResponse);
+        }
+    }
+
 }

@@ -22,8 +22,8 @@ public class TicketServiceImpl implements TicketService {
     private static final String GITHUB_TOKEN = "";
 
     private static final String OWNER = "cdcent";
-    private static final String REPO = "NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY";
-
+    //private static final String REPO = "NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY";
+    private static final String REPO = "NCHHSTP-DHP-HSB-ADT-SANDBOX-BINTA";
 
 /*    private static final String OWNER = "bk71-cdc";
     private static final String REPO = "github-issues";*/
@@ -272,43 +272,8 @@ public class TicketServiceImpl implements TicketService {
         return response;
     }
 
-/*
-    @Override
-    public LoadTicketsResponse updateTicketsFromExcel(String fileName) {
-        LoadTicketsResponse response = new LoadTicketsResponse();
-        
-        try {
-            // Initialize repository info
-            initializeRepositoryInfo();
-            
-            // Get the Excel file from resources or use provided path
-            InputStream excelStream = getExcelInputStream(fileName);
-            if (excelStream == null) {
-                response.setMessage("Excel file not found: " + fileName);
-                response.addError("File not found: " + fileName);
-                return response;
-            }
-            
-            // Process the Excel file for updates
-            List<String> updatedIssueIds = processExcelFileForUpdates(excelStream, response);
-            
-            response.setTotalCount(updatedIssueIds.size());
-            response.setSuccessCount(updatedIssueIds.size());
-            response.setFailureCount(0);
-            response.setIssueIds(updatedIssueIds);
-            response.setMessage("Successfully updated " + updatedIssueIds.size() + " tickets from " + fileName);
-            
-        } catch (Exception e) {
-            response.setMessage("Error updating tickets from Excel: " + e.getMessage());
-            response.addError("Exception: " + e.getMessage());
-            response.setTotalCount(0);
-            response.setSuccessCount(0);
-            response.setFailureCount(1);
-        }
-        
-        return response;
-    }
-*/
+
+
 
     public LoadTicketsResponse processAdtFromExcel(String fileName) {
         LoadTicketsResponse response = new LoadTicketsResponse();
@@ -1504,7 +1469,8 @@ public class TicketServiceImpl implements TicketService {
         if (labels == null || labels.isEmpty()) return;
         
         // Use REST API to add labels by name
-        String url = String.format("https://api.github.com/repos/cdcent/NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY/issues/%s/labels", issueNumber);
+        //String url = String.format("https://api.github.com/repos/cdcent/NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY/issues/%s/labels", issueNumber);
+        String url = String.format("https://api.github.com/repos/cdcent/NCHHSTP-DHP-HSB-ADT-SANDBOX-BINTA/issues/%s/labels", issueNumber);
 
      //   String url = String.format("https://api.github.com/repos/bk71-cdc/github-issues/issues/%s/labels", issueNumber);
         JsonArray labelsArray = new JsonArray();
@@ -1688,4 +1654,241 @@ public class TicketServiceImpl implements TicketService {
         
         return Math.min(delay, maxDelay);
     }
+
+
+    @Override
+    public LoadTicketsResponse loadTicketsADT(String fileName) {
+
+        LoadTicketsResponse response = new LoadTicketsResponse();
+
+        try {
+            // Initialize repository info
+            initializeRepositoryInfo();
+
+            // Get the Excel file from resources or use provided path
+            InputStream excelStream = getExcelInputStream(fileName);
+            if (excelStream == null) {
+                response.setMessage("Excel file not found: " + fileName);
+                response.addError("File not found: " + fileName);
+                return response;
+            }
+
+            // Process the Excel file
+            List<String> createdIssueIds = processADTExcelFile(excelStream, response);
+
+            response.setTotalCount(createdIssueIds.size());
+            response.setSuccessCount(createdIssueIds.size());
+            response.setFailureCount(0);
+            response.setIssueIds(createdIssueIds);
+            response.setMessage("Successfully created " + createdIssueIds.size() + " issues from " + fileName);
+
+        } catch (Exception e) {
+            response.setMessage("Error loading tickets from Excel: " + e.getMessage());
+            response.addError("Exception: " + e.getMessage());
+            response.setTotalCount(0);
+            response.setSuccessCount(0);
+            response.setFailureCount(1);
+        }
+
+        return response;
+    }
+
+    private List<String> processADTExcelFile(InputStream excelStream, LoadTicketsResponse response) throws IOException {
+        List<String> createdIssueIds = new ArrayList<>();
+
+        Workbook workbook;
+        try {
+            // Detect Excel format and use appropriate workbook
+            if (excelStream.markSupported()) {
+                excelStream.mark(0);
+                // Try to detect if it's XLS or XLSX
+                byte[] header = new byte[8];
+                int bytesRead = excelStream.read(header);
+                excelStream.reset();
+
+                // Check for XLS signature (OLE2 format)
+                if (bytesRead >= 8 &&
+                        header[0] == 0xD0 && header[1] == 0xCF &&
+                        header[2] == 0x11 && header[3] == 0xE0 &&
+                        header[4] == 0xA1 && header[5] == 0xB1 &&
+                        header[6] == 0x1A && header[7] == 0xE1) {
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                } else {
+                    // Try XLSX first, if it fails, fall back to XLS
+                    try {
+                        workbook = new XSSFWorkbook(excelStream);
+                    } catch (Exception xlsxException) {
+                        // Reset stream and try XLS
+                        excelStream.reset();
+                        workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                    }
+                }
+            } else {
+                // If stream doesn't support mark, try XLSX first, then XLS
+                try {
+                    workbook = new XSSFWorkbook(excelStream);
+                } catch (Exception xlsxException) {
+                    // Create a fresh stream for XLS
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                }
+            }
+        } catch (Exception e) {
+            throw new IOException("Failed to create workbook: " + e.getMessage(), e);
+        }
+
+        try {
+            Sheet sheet = workbook.getSheetAt(0);
+
+            // Find header row and capture ALL column names
+            Row headerRow = sheet.getRow(3); // Header is on row 4 (0-indexed is 3)
+            List<String> columnNames = new ArrayList<>();
+            Map<String, Integer> columnMap = new HashMap<>();
+
+            // Capture all column names and find key columns
+            for (int i = 0; i < headerRow.getLastCellNum(); i++) {
+                Cell cell = headerRow.getCell(i);
+                if (cell != null && cell.getCellType() == CellType.STRING) {
+                    String columnName = cell.getStringCellValue().trim();
+                    columnNames.add(columnName);
+                    columnMap.put(columnName.toLowerCase(), i);
+                }
+            }
+
+            // Process data rows, starting from row 5 (0-indexed is 4)
+            for (int rowNum = 4; rowNum <= sheet.getLastRowNum(); rowNum++) {
+                Row row = sheet.getRow(rowNum);
+                if (row == null) continue;
+
+                // Extract key field for title prefix
+                String excelIssueId = getCellValue(row, columnMap, "id");
+                String excelTicketId = getCellValue(row, columnMap, "ticket id");
+                String excelKey = getCellValue(row, columnMap, "key");
+
+                // Use the first non-empty key field found
+                String keyPrefix = "";
+                if (excelIssueId != null && !excelIssueId.isEmpty()) {
+                    keyPrefix = excelIssueId;
+                } else if (excelTicketId != null && !excelTicketId.isEmpty()) {
+                    keyPrefix = excelTicketId;
+                } else if (excelKey != null && !excelKey.isEmpty()) {
+                    keyPrefix = excelKey;
+                }
+
+                // Extract data from key columns
+                String title = getCellValue(row, columnMap, "summary");
+                if (title.isEmpty()) {
+                    continue;
+                }
+
+                // Prepend key to title if key exists
+                if (!keyPrefix.isEmpty()) {
+                    title = keyPrefix + ": " + title;
+                }
+
+                String project = getCellValue(row, columnMap, "project");
+                String issueType = getCellValue(row, columnMap, "issue type");
+                String priority = getCellValue(row, columnMap, "priority");
+                String affectsVersion = getCellValue(row, columnMap, "affects version/s");
+                String fixVersion = getCellValue(row, columnMap, "fix version/s");
+                String components = getCellValue(row, columnMap, "component/s");
+                String moduleInfo = getCellValue(row, columnMap, "module info");
+                String assignee = getCellValue(row, columnMap, "assignee");
+                String reporter = getCellValue(row, columnMap, "reporter");
+                String status = getCellValue(row, columnMap, "status");
+                String description = getCellValue(row, columnMap, "description");
+                String comments = getCellValue(row, columnMap, "comments");
+                String linkedIssues = getCellValue(row, columnMap, "linked issues");
+                String attachment = getCellValue(row, columnMap, "attachment");
+                String resolution = getCellValue(row, columnMap, "resolution");
+                String created = getCellValue(row, columnMap, "created");
+                String updated = getCellValue(row, columnMap, "updated");
+                String customerName = getCellValue(row, columnMap, "customer name");
+                String helpDeskNumbers = getCellValue(row, columnMap, "help desk number(s)");
+                String duplicateCqId = getCellValue(row, columnMap, "duplicate cq id");
+                String resolved = getCellValue(row, columnMap, "resolved");
+
+                // Check if Module Info is "ADT" - if so, create empty issue
+                if ("ADT".equalsIgnoreCase(moduleInfo))
+                {
+                    // Map issue type to label
+                    String mappedIssueType = mapIssueTypeLabel(issueType);
+
+                    // Set default project since not in Excel headers
+                    String projectValue = project != null && !project.isEmpty() ? project : "eHARS";
+
+                    // Create issue body using improvement_form.yml structure
+                    String body = populateImprovementFormTemplate(
+                            title, projectValue, mappedIssueType, priority,
+                            affectsVersion, fixVersion, components, moduleInfo,
+                            assignee, description, linkedIssues, attachment, resolution,
+                            created, updated, customerName, helpDeskNumbers, duplicateCqId, resolved);
+
+                    // Create GitHub issue with proper labels based on issue type
+                    List<String> labels = new ArrayList<>();
+                    if (!mappedIssueType.isEmpty()) {
+                        labels.add(mappedIssueType);
+                    } else {
+                        labels.add("enhancement"); // default if issue type mapping fails
+                    }
+
+                    List<String> assignees = new ArrayList<>();
+                    if (!assignee.isEmpty()) {
+                        String[] assigneeList = assignee.split(",");
+                        for (String a : assigneeList) {
+                            assignees.add(a.trim());
+                        }
+                    }
+
+                    String[] issueResult;
+                    try {
+                        // Add throttling delay between requests to avoid rate limiting
+                        if (rowNum > 4) { // Skip delay for first request
+                            Thread.sleep(200); // 200ms delay between requests
+                        }
+
+                        issueResult = createIssue(repositoryId, title, body, labels, assignees, "");
+                    } catch (Exception e) {
+                        response.addError("Failed to create issue for row " + rowNum + ": " + title + " - Error: " + e.getMessage());
+                        continue;
+                    }
+
+                    if (issueResult != null && issueResult.length == 2) {
+                        String issueId = issueResult[0];
+                        String issueNumber = issueResult[1];
+
+                        // Close issue if status is "closed"
+                        if ("closed".equalsIgnoreCase(status)) {
+                            try {
+                                closeIssue(issueId);
+                            } catch (Exception e) {
+                                // Silently ignore close failures
+                            }
+                        }
+
+                        createdIssueIds.add("Issue #" + issueNumber);
+
+                        // Add second issue body with comments as the very last step
+                        if (comments != null && !comments.isEmpty()) {
+                            try {
+                                addSecondIssueBody(issueId, issueNumber, comments);
+                            } catch (Exception e) {
+                                // Silently ignore comment addition failures
+                            }
+                        }
+                    } else {
+                        response.addError("Failed to create issue for row " + rowNum + ": " + title);
+                    }
+
+                }
+            }
+
+            workbook.close();
+        } catch (Exception e) {
+            throw new IOException("Failed to process Excel file: " + e.getMessage(), e);
+        }
+
+        return createdIssueIds;
+    }
+
+
 }
