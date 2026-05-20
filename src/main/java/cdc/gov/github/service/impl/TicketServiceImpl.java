@@ -12,19 +12,166 @@ import org.springframework.core.io.ClassPathResource;
 import java.io.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ThreadLocalRandom;
 
 @Service
 public class TicketServiceImpl implements TicketService {
     
     private static final String GITHUB_API_URL = "https://api.github.com/graphql";
     private static final String GITHUB_TOKEN = "";
+
     private static final String OWNER = "cdcent";
     private static final String REPO = "NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY";
-    
-    private final OkHttpClient client = new OkHttpClient();
+
+
+/*    private static final String OWNER = "bk71-cdc";
+    private static final String REPO = "github-issues";*/
+
+
+    private final OkHttpClient client = new OkHttpClient.Builder()
+            .connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+            .connectionPool(new okhttp3.ConnectionPool(10, 5, java.util.concurrent.TimeUnit.MINUTES))
+            .build();
     private final Gson gson = new GsonBuilder().setPrettyPrinting().create();
     private String repositoryId = "";
     private String ownerId = "";
+    
+    // Rate limit tracking
+    private int rateLimitRemaining = -1;
+    private long rateLimitResetTime = -1;
+    
+    // Request tracking for debugging
+    private final AtomicInteger requestCounter = new AtomicInteger(0);
+    private static final int CONNECTION_RESET_INTERVAL = 50; // Reset connection pool every 50 requests
+    private static final int BATCH_SIZE = 50; // Process in batches of 50
+    private static final int BATCH_DELAY_MS = 2000; // 2 second delay between batches
+
+    /**
+     * Comprehensive GraphQL response validation utility
+     */
+    private static class GraphQLResponseValidator {
+        private final JsonObject response;
+        private final String requestId;
+        private final Gson gson;
+
+        public GraphQLResponseValidator(JsonObject response, String requestId, Gson gson) {
+            this.response = response;
+            this.requestId = requestId;
+            this.gson = gson;
+        }
+
+        /**
+         * Validate complete GraphQL response structure
+         * @throws IOException with detailed error message if validation fails
+         */
+        public void validate() throws IOException {
+            validateResponseNotNull();
+            validateErrors();
+            validateDataNotNull();
+        }
+
+        /**
+         * Validate createIssue mutation response specifically
+         * @throws IOException with detailed error message if validation fails
+         */
+        public void validateCreateIssueResponse() throws IOException {
+            validate();
+            
+            JsonElement data = response.get("data");
+            JsonObject dataObj = data.getAsJsonObject();
+            
+            if (!dataObj.has("createIssue")) {
+                throw new IOException(buildErrorMessage("Response missing 'createIssue' field"));
+            }
+            
+            JsonElement createIssueElement = dataObj.get("createIssue");
+            
+            if (createIssueElement == null || createIssueElement.isJsonNull()) {
+                throw new IOException(buildErrorMessage("createIssue is null - mutation may have failed silently"));
+            }
+            
+            if (!createIssueElement.isJsonObject()) {
+                throw new IOException(buildErrorMessage("createIssue is not an object"));
+            }
+            
+            JsonObject createIssueObj = createIssueElement.getAsJsonObject();
+            
+            // Check if createIssue is empty object (partial failure)
+            if (createIssueObj.size() == 0) {
+                throw new IOException(buildErrorMessage("createIssue is empty object {} - indicates partial failure or server-side rejection"));
+            }
+            
+            if (!createIssueObj.has("issue")) {
+                throw new IOException(buildErrorMessage("createIssue missing 'issue' field - mutation succeeded but didn't return issue data"));
+            }
+            
+            JsonElement issueElement = createIssueObj.get("issue");
+            
+            if (issueElement == null || issueElement.isJsonNull()) {
+                throw new IOException(buildErrorMessage("issue is null - issue creation may have failed or been rejected"));
+            }
+            
+            if (!issueElement.isJsonObject()) {
+                throw new IOException(buildErrorMessage("issue is not an object"));
+            }
+            
+            JsonObject issue = issueElement.getAsJsonObject();
+            
+            if (issue.size() == 0) {
+                throw new IOException(buildErrorMessage("issue object is empty - indicates data corruption or server error"));
+            }
+            
+            if (!issue.has("id") || !issue.has("number")) {
+                throw new IOException(buildErrorMessage("issue missing required fields (id or number). Issue data: " + gson.toJson(issue)));
+            }
+        }
+
+        private void validateResponseNotNull() throws IOException {
+            if (response == null) {
+                throw new IOException(buildErrorMessage("Response is null"));
+            }
+        }
+
+        private void validateErrors() throws IOException {
+            if (response.has("errors")) {
+                JsonArray errors = response.getAsJsonArray("errors");
+                StringBuilder errorMessages = new StringBuilder();
+                for (JsonElement error : errors) {
+                    if (error != null && error.isJsonObject()) {
+                        JsonObject errorObj = error.getAsJsonObject();
+                        if (errorObj.has("message")) {
+                            errorMessages.append(errorObj.get("message").getAsString()).append("; ");
+                        }
+                        if (errorObj.has("type")) {
+                            errorMessages.append("[Type: ").append(errorObj.get("type").getAsString()).append("] ");
+                        }
+                        if (errorObj.has("path")) {
+                            errorMessages.append("[Path: ").append(errorObj.get("path")).append("] ");
+                        }
+                    }
+                }
+                throw new IOException(buildErrorMessage("GraphQL errors: " + errorMessages.toString()));
+            }
+        }
+
+        private void validateDataNotNull() throws IOException {
+            JsonElement data = response.get("data");
+            if (data == null || data.isJsonNull()) {
+                throw new IOException(buildErrorMessage("Response data is null - indicates complete failure"));
+            }
+            if (!data.isJsonObject()) {
+                throw new IOException(buildErrorMessage("Response data is not an object"));
+            }
+        }
+
+        private String buildErrorMessage(String message) {
+            return String.format("[Request ID: %s] %s. Full response: %s", 
+                requestId, message, gson.toJson(response));
+        }
+    }
 
     @Override
     public LoadTicketsResponse loadTicketsFromExcel(String fileName) {
@@ -81,6 +228,11 @@ public class TicketServiceImpl implements TicketService {
             // Create empty issues using improvement_form.yml structure
             for (int i = 0; i < numberOfIssues; i++) {
                 try {
+                    // Add throttling delay between requests to avoid rate limiting
+                    if (i > 0) {
+                        Thread.sleep(200); // 200ms delay between requests
+                    }
+                    
                     String issueTitle = "Empty Issue #" + (i + 1);
                     String issueBody = populateImprovementFormTemplate(
                         issueTitle, "eHARS", "Task", "Average", 
@@ -120,6 +272,7 @@ public class TicketServiceImpl implements TicketService {
         return response;
     }
 
+/*
     @Override
     public LoadTicketsResponse updateTicketsFromExcel(String fileName) {
         LoadTicketsResponse response = new LoadTicketsResponse();
@@ -155,6 +308,7 @@ public class TicketServiceImpl implements TicketService {
         
         return response;
     }
+*/
 
     public LoadTicketsResponse processAdtFromExcel(String fileName) {
         LoadTicketsResponse response = new LoadTicketsResponse();
@@ -193,22 +347,11 @@ public class TicketServiceImpl implements TicketService {
 
     private void initializeRepositoryInfo() throws IOException {
         if (repositoryId.isEmpty()) {
-            System.out.println("Initializing repository info...");
-            System.out.println("Owner: " + OWNER);
-            System.out.println("Repo: " + REPO);
-            System.out.println("Token: " + (GITHUB_TOKEN.length() > 10 ? GITHUB_TOKEN.substring(0, 10) + "..." : "INVALID"));
-            
             try {
                 JsonObject repoInfo = getRepoInfo(OWNER, REPO);
-                System.out.println("Repo info response: " + repoInfo.toString());
-                
                 repositoryId = repoInfo.get("repoId").getAsString();
                 ownerId = repoInfo.get("ownerId").getAsString();
-                
-                System.out.println("Repository ID: " + repositoryId);
-                System.out.println("Owner ID: " + ownerId);
             } catch (Exception e) {
-                System.err.println("Error initializing repository info: " + e.getMessage());
                 throw e;
             }
         }
@@ -219,30 +362,23 @@ public class TicketServiceImpl implements TicketService {
             // First try to load from resources
             ClassPathResource resource = new ClassPathResource(fileName);
             if (resource.exists()) {
-                System.out.println("Found file in resources: " + fileName);
                 return resource.getInputStream();
             }
             
             // Try as absolute path
             File file = new File(fileName);
             if (file.exists()) {
-                System.out.println("Found file as absolute path: " + file.getAbsolutePath());
                 return new FileInputStream(file);
             }
             
             // Try as relative path from project root
             File relativeFile = new File(System.getProperty("user.dir"), fileName);
             if (relativeFile.exists()) {
-                System.out.println("Found file as relative path: " + relativeFile.getAbsolutePath());
                 return new FileInputStream(relativeFile);
             }
             
-            System.out.println("File not found: " + fileName);
-            System.out.println("Current working directory: " + System.getProperty("user.dir"));
-            
             return null;
         } catch (Exception e) {
-            System.err.println("Error loading file " + fileName + ": " + e.getMessage());
             return null;
         }
     }
@@ -267,28 +403,23 @@ public class TicketServiceImpl implements TicketService {
                     header[4] == 0xA1 && header[5] == 0xB1 && 
                     header[6] == 0x1A && header[7] == 0xE1) {
                     workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                    System.out.println("Detected XLS format, using HSSFWorkbook");
                 } else {
                     // Try XLSX first, if it fails, fall back to XLS
                     try {
                         workbook = new XSSFWorkbook(excelStream);
-                        System.out.println("Detected XLSX format, using XSSFWorkbook");
                     } catch (Exception xlsxException) {
                         // Reset stream and try XLS
                         excelStream.reset();
                         workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                        System.out.println("XLSX failed, falling back to XLS format with HSSFWorkbook");
                     }
                 }
             } else {
                 // If stream doesn't support mark, try XLSX first, then XLS
                 try {
                     workbook = new XSSFWorkbook(excelStream);
-                    System.out.println("Stream doesn't support mark, trying XSSFWorkbook first - succeeded");
                 } catch (Exception xlsxException) {
                     // Create a fresh stream for XLS
                     workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                    System.out.println("XSSFWorkbook failed, using HSSFWorkbook");
                 }
             }
         } catch (Exception e) {
@@ -313,10 +444,6 @@ public class TicketServiceImpl implements TicketService {
                 }
             }
             
-            System.out.println("Found columns: " + columnNames);
-            System.out.println("Column map: " + columnMap);
-            System.out.println("Total rows in sheet: " + sheet.getLastRowNum());
-            
             // Process data rows, starting from row 5 (0-indexed is 4)
             for (int rowNum = 4; rowNum <= sheet.getLastRowNum(); rowNum++) {
                 Row row = sheet.getRow(rowNum);
@@ -339,9 +466,7 @@ public class TicketServiceImpl implements TicketService {
                 
                 // Extract data from key columns
                 String title = getCellValue(row, columnMap, "summary");
-                System.out.println("Row " + rowNum + " - Title: '" + title + "'");
                 if (title.isEmpty()) {
-                    System.out.println("Skipping row " + rowNum + " - empty title");
                     continue;
                 }
                 
@@ -391,11 +516,9 @@ public class TicketServiceImpl implements TicketService {
                                 try {
                                     closeIssue(issueId);
                                 } catch (Exception e) {
-                                    System.out.println("Warning: Failed to close ADT issue #" + issueNumber + ": " + e.getMessage());
+                                    // Silently ignore close failures
                                 }
                             }
-
-                            System.out.println("Created empty issue for ADT module: " + emptyIssueTitle);
                         } else {
                             response.addError("Failed to create empty issue for ADT module in row " + rowNum);
                         }
@@ -434,7 +557,19 @@ public class TicketServiceImpl implements TicketService {
                     }
                 }
                 
-                String[] issueResult = createIssue(repositoryId, title, body, labels, assignees, "");
+                String[] issueResult;
+                try {
+                    // Add throttling delay between requests to avoid rate limiting
+                    if (rowNum > 4) { // Skip delay for first request
+                        Thread.sleep(200); // 200ms delay between requests
+                    }
+                    
+                    issueResult = createIssue(repositoryId, title, body, labels, assignees, "");
+                } catch (Exception e) {
+                    response.addError("Failed to create issue for row " + rowNum + ": " + title + " - Error: " + e.getMessage());
+                    continue;
+                }
+                
                 if (issueResult != null && issueResult.length == 2) {
                     String issueId = issueResult[0];
                     String issueNumber = issueResult[1];
@@ -444,7 +579,7 @@ public class TicketServiceImpl implements TicketService {
                         try {
                             closeIssue(issueId);
                         } catch (Exception e) {
-                            System.out.println("Warning: Failed to close issue #" + issueNumber + ": " + e.getMessage());
+                            // Silently ignore close failures
                         }
                     }
                     
@@ -455,7 +590,7 @@ public class TicketServiceImpl implements TicketService {
                         try {
                             addSecondIssueBody(issueId, issueNumber, comments);
                         } catch (Exception e) {
-                            System.out.println("Warning: Failed to add second issue body to issue #" + issueNumber + ": " + e.getMessage());
+                            // Silently ignore comment addition failures
                         }
                     }
                 } else {
@@ -491,28 +626,23 @@ public class TicketServiceImpl implements TicketService {
                     header[4] == 0xA1 && header[5] == 0xB1 &&
                     header[6] == 0x1A && header[7] == 0xE1) {
                     workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                    System.out.println("Detected XLS format, using HSSFWorkbook");
                 } else {
                     // Try XLSX first, if it fails, fall back to XLS
                     try {
                         workbook = new XSSFWorkbook(excelStream);
-                        System.out.println("Detected XLSX format, using XSSFWorkbook");
                     } catch (Exception xlsxException) {
                         // Reset stream and try XLS
                         excelStream.reset();
                         workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                        System.out.println("XLSX failed, falling back to XLS format with HSSFWorkbook");
                     }
                 }
             } else {
                 // If stream doesn't support mark, try XLSX first, then XLS
                 try {
                     workbook = new XSSFWorkbook(excelStream);
-                    System.out.println("Stream doesn't support mark, trying XSSFWorkbook first - succeeded");
                 } catch (Exception xlsxException) {
                     // Create a fresh stream for XLS
                     workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
-                    System.out.println("XSSFWorkbook failed, using HSSFWorkbook");
                 }
             }
         } catch (Exception e) {
@@ -537,10 +667,6 @@ public class TicketServiceImpl implements TicketService {
                 }
             }
 
-            System.out.println("Found columns: " + columnNames);
-            System.out.println("Column map: " + columnMap);
-            System.out.println("Total rows in sheet: " + sheet.getLastRowNum());
-
             // Process data rows, starting from row 5 (0-indexed is 4)
             for (int rowNum = 4; rowNum <= sheet.getLastRowNum(); rowNum++) {
                 Row row = sheet.getRow(rowNum);
@@ -563,9 +689,7 @@ public class TicketServiceImpl implements TicketService {
 
                 // Extract data from key columns
                 String title = getCellValue(row, columnMap, "summary");
-                System.out.println("Row " + rowNum + " - Title: '" + title + "'");
                 if (title.isEmpty()) {
-                    System.out.println("Skipping row " + rowNum + " - empty title");
                     continue;
                 }
 
@@ -598,11 +722,8 @@ public class TicketServiceImpl implements TicketService {
 
                 // Check if Module Info is "ADT" - if so, create full issue, otherwise skip
                 if (!"ADT".equalsIgnoreCase(moduleInfo)) {
-                    System.out.println("Skipping non-ADT row " + rowNum + " - Module Info: " + moduleInfo);
                     continue;
                 }
-
-                System.out.println("Processing ADT row " + rowNum);
 
                 // Map issue type to label
                 String mappedIssueType = mapIssueTypeLabel(issueType);
@@ -635,6 +756,11 @@ public class TicketServiceImpl implements TicketService {
 
                 // Create full issue for ADT entries
                 try {
+                    // Add throttling delay between requests to avoid rate limiting
+                    if (rowNum > 4) {
+                        Thread.sleep(200); // 200ms delay between requests
+                    }
+                    
                     String[] issueResult = createIssue(repositoryId, title, body, labels, assignees, "");
                     if (issueResult != null && issueResult.length == 2) {
                         String issueId = issueResult[0];
@@ -645,7 +771,7 @@ public class TicketServiceImpl implements TicketService {
                             try {
                                 closeIssue(issueId);
                             } catch (Exception e) {
-                                System.out.println("Warning: Failed to close issue #" + issueNumber + ": " + e.getMessage());
+                                // Silently ignore close failures
                             }
                         }
 
@@ -656,11 +782,9 @@ public class TicketServiceImpl implements TicketService {
                             try {
                                 addSecondIssueBody(issueId, issueNumber, comments);
                             } catch (Exception e) {
-                                System.out.println("Warning: Failed to add second issue body to issue #" + issueNumber + ": " + e.getMessage());
+                                // Silently ignore comment addition failures
                             }
                         }
-
-                        System.out.println("Created full issue for ADT module: " + title);
                     } else {
                         response.addError("Failed to create issue for ADT row " + rowNum + ": " + title);
                     }
@@ -680,11 +804,51 @@ public class TicketServiceImpl implements TicketService {
     private List<String> processExcelFileForUpdates(InputStream excelStream, LoadTicketsResponse response) throws IOException {
         List<String> updatedIssueIds = new ArrayList<>();
         
-        try (Workbook workbook = new XSSFWorkbook(excelStream)) {
+        Workbook workbook;
+        try {
+            // Detect Excel format and use appropriate workbook
+            if (excelStream.markSupported()) {
+                excelStream.mark(0);
+                // Try to detect if it's XLS or XLSX
+                byte[] header = new byte[8];
+                int bytesRead = excelStream.read(header);
+                excelStream.reset();
+                
+                // Check for XLS signature (OLE2 format)
+                if (bytesRead >= 8 && 
+                    header[0] == 0xD0 && header[1] == 0xCF && 
+                    header[2] == 0x11 && header[3] == 0xE0 && 
+                    header[4] == 0xA1 && header[5] == 0xB1 && 
+                    header[6] == 0x1A && header[7] == 0xE1) {
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                } else {
+                    // Try XLSX first, if it fails, fall back to XLS
+                    try {
+                        workbook = new XSSFWorkbook(excelStream);
+                    } catch (Exception xlsxException) {
+                        // Reset stream and try XLS
+                        excelStream.reset();
+                        workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                    }
+                }
+            } else {
+                // If stream doesn't support mark, try XLSX first, then XLS
+                try {
+                    workbook = new XSSFWorkbook(excelStream);
+                } catch (Exception xlsxException) {
+                    // Create a fresh stream for XLS
+                    workbook = new org.apache.poi.hssf.usermodel.HSSFWorkbook(excelStream);
+                }
+            }
+        } catch (Exception e) {
+            throw new IOException("Failed to create workbook: " + e.getMessage(), e);
+        }
+        
+        try {
             Sheet sheet = workbook.getSheetAt(0);
             
             // Find header row and capture ALL column names
-            Row headerRow = sheet.getRow(0);
+            Row headerRow = sheet.getRow(3); // Header is on row 4 (0-indexed is 3)
             List<String> columnNames = new ArrayList<>();
             Map<String, Integer> columnMap = new HashMap<>();
             
@@ -698,8 +862,8 @@ public class TicketServiceImpl implements TicketService {
                 }
             }
             
-            // Process data rows
-            for (int rowNum = 1; rowNum <= sheet.getLastRowNum(); rowNum++) {
+            // Process data rows, starting from row 5 (0-indexed is 4)
+            for (int rowNum = 4; rowNum <= sheet.getLastRowNum(); rowNum++) {
                 Row row = sheet.getRow(rowNum);
                 if (row == null) continue;
                 
@@ -726,11 +890,11 @@ public class TicketServiceImpl implements TicketService {
                 }
                 
                 // Extract other data from key columns
-                String title = getCellValue(row, columnMap, "title");
+                String title = getCellValue(row, columnMap, "summary");
                 
-                // Prepend original key to title if title exists and original key is not empty
+                // Prepend key to title if key exists
                 if (!title.isEmpty() && originalKey != null && !originalKey.isEmpty()) {
-                    title = originalKey + " : " + title;
+                    title = originalKey + ": " + title;
                 }
                 String project = getCellValue(row, columnMap, "project");
                 String issueType = getCellValue(row, columnMap, "issue type");
@@ -755,10 +919,12 @@ public class TicketServiceImpl implements TicketService {
                 // Map issue type to label
                 String mappedIssueType = mapIssueTypeLabel(issueType);
                 
+                // Set default project since not in Excel headers
+                String projectValue = project != null && !project.isEmpty() ? project : "eHARS";
+                
                 // Create issue body using improvement_form.yml structure
                 String body = populateImprovementFormTemplate(
-                    title.isEmpty() ? "Updated Issue #" + issueNumber : title, 
-                    project, mappedIssueType, priority, 
+                    title, projectValue, mappedIssueType, priority, 
                     affectsVersion, fixVersion, components, moduleInfo, 
                     assignee, description, linkedIssues, attachment, resolution,
                     created, updated, customerName, helpDeskNumbers, duplicateCqId, resolved);
@@ -767,7 +933,7 @@ public class TicketServiceImpl implements TicketService {
                 try {
                     String updatedIssueId = updateIssue(repositoryId, issueNumber, title, body, mappedIssueType, assignee);
                     if (updatedIssueId != null && !updatedIssueId.isEmpty()) {
-                        updatedIssueIds.add(updatedIssueId);
+                        updatedIssueIds.add("Issue #" + issueNumber);
                         
                         // Handle issue status - close if "closed", otherwise keep open
                         String status = getCellValue(row, columnMap, "status");
@@ -775,7 +941,7 @@ public class TicketServiceImpl implements TicketService {
                             try {
                                 closeIssue(updatedIssueId);
                             } catch (Exception e) {
-                                System.out.println("Warning: Failed to close issue #" + issueNumber + ": " + e.getMessage());
+                                // Silently ignore close failures
                             }
                         }
                         
@@ -784,7 +950,7 @@ public class TicketServiceImpl implements TicketService {
                             try {
                                 addSecondIssueBody(updatedIssueId, issueNumber, comments);
                             } catch (Exception e) {
-                                System.out.println("Warning: Failed to add second issue body to issue #" + issueNumber + ": " + e.getMessage());
+                                // Silently ignore comment addition failures
                             }
                         }
                     } else {
@@ -796,6 +962,8 @@ public class TicketServiceImpl implements TicketService {
             }
             
             workbook.close();
+        } catch (Exception e) {
+            response.addError("Error processing Excel file: " + e.getMessage());
         }
         
         return updatedIssueIds;
@@ -821,7 +989,60 @@ public class TicketServiceImpl implements TicketService {
         return "";
     }
     
+    private String getIssueNodeId(String repoId, String issueNumber) throws IOException {
+        String query = """
+            query($owner: String!, $repo: String!, $number: Int!) {
+              repository(owner: $owner, name: $repo) {
+                issue(number: $number) {
+                  id
+                }
+              }
+            }
+            """;
+        
+        JsonObject variables = new JsonObject();
+        variables.addProperty("owner", OWNER);
+        variables.addProperty("repo", REPO);
+        variables.addProperty("number", Integer.parseInt(issueNumber));
+        
+        JsonObject response = executeGraphQL(query, variables);
+        
+        if (response == null) {
+            return null;
+        }
+        
+        if (response.has("errors")) {
+            JsonArray errors = response.getAsJsonArray("errors");
+            System.err.println("GraphQL errors getting node ID for issue #" + issueNumber + ": " + errors);
+            return null;
+        }
+        
+        JsonElement data = response.get("data");
+        if (data == null || data.isJsonNull()) {
+            return null;
+        }
+        
+        JsonObject repository = data.getAsJsonObject().getAsJsonObject("repository");
+        if (repository == null || repository.isJsonNull()) {
+            return null;
+        }
+        
+        JsonObject issue = repository.getAsJsonObject("issue");
+        if (issue == null || issue.isJsonNull()) {
+            return null;
+        }
+        
+        return issue.get("id").getAsString();
+    }
+    
     private String updateIssue(String repoId, String issueNumber, String title, String body, String issueType, String assignee) throws IOException {
+        // First, get the issue's node ID
+        String issueNodeId = getIssueNodeId(repoId, issueNumber);
+        if (issueNodeId == null) {
+            System.err.println("Could not get node ID for issue #" + issueNumber);
+            return null;
+        }
+        
         String mutation = """
             mutation($input: UpdateIssueInput!) {
               updateIssue(input: $input) {
@@ -834,8 +1055,7 @@ public class TicketServiceImpl implements TicketService {
             """;
         
         JsonObject input = new JsonObject();
-        input.addProperty("repositoryId", repoId);
-        input.addProperty("issueNumber", Integer.parseInt(issueNumber));
+        input.addProperty("id", issueNodeId);
         
         if (title != null && !title.isEmpty()) {
             input.addProperty("title", title);
@@ -850,31 +1070,26 @@ public class TicketServiceImpl implements TicketService {
         
         JsonObject response = executeGraphQL(mutation, variables);
         
-        // Debug: Print the full response
-        System.out.println("GraphQL Response: " + response.toString());
-        
         if (response == null) {
-            System.out.println("Response is null");
+            System.err.println("GraphQL response is null for issue #" + issueNumber);
             return null;
         }
         
         // Check for errors in GraphQL response
         if (response.has("errors")) {
             JsonArray errors = response.getAsJsonArray("errors");
-            System.out.println("GraphQL Errors: " + errors.toString());
+            System.err.println("GraphQL errors for issue #" + issueNumber + ": " + errors);
             return null;
         }
         
         JsonElement data = response.get("data");
         if (data == null || data.isJsonNull()) {
-            System.out.println("No data field in response");
             return null;
         }
         
         if (data.isJsonObject() && data.getAsJsonObject().has("updateIssue")) {
             JsonElement updateIssueElement = new Gson().fromJson(data.getAsJsonObject().get("updateIssue").toString(), JsonElement.class);
             if (updateIssueElement.isJsonNull()) {
-                System.out.println("updateIssue is null");
                 return null;
             }
             
@@ -882,7 +1097,6 @@ public class TicketServiceImpl implements TicketService {
             if (updateIssue.has("issue")) {
                 JsonElement issueElement = updateIssue.get("issue");
                 if (issueElement.isJsonNull()) {
-                    System.out.println("issue is null in updateIssue");
                     return null;
                 }
                 
@@ -890,15 +1104,12 @@ public class TicketServiceImpl implements TicketService {
                 if (issue.has("id")) {
                     return issue.get("id").getAsString();
                 } else {
-                    System.out.println("No id field in issue");
                     return null;
                 }
             } else {
-                System.out.println("No issue field in updateIssue");
                 return null;
             }
         } else {
-            System.out.println("No updateIssue field in data");
             return null;
         }
     }
@@ -1103,8 +1314,12 @@ public class TicketServiceImpl implements TicketService {
             JsonArray errors = response.getAsJsonArray("errors");
             StringBuilder errorMessages = new StringBuilder();
             for (JsonElement error : errors) {
-                JsonObject errorObj = error.getAsJsonObject();
-                errorMessages.append(errorObj.get("message").getAsString()).append("; ");
+                if (error != null && error.isJsonObject()) {
+                    JsonObject errorObj = error.getAsJsonObject();
+                    if (errorObj.has("message")) {
+                        errorMessages.append(errorObj.get("message").getAsString()).append("; ");
+                    }
+                }
             }
             throw new IOException("GraphQL errors: " + errorMessages.toString());
         }
@@ -1114,6 +1329,10 @@ public class TicketServiceImpl implements TicketService {
             throw new IOException("No data returned from GraphQL query");
         }
 
+        if (!data.isJsonObject()) {
+            throw new IOException("Data is not a JSON object");
+        }
+
         JsonObject dataObj = data.getAsJsonObject();
         JsonElement repoElement = dataObj.get("repository");
 
@@ -1121,11 +1340,19 @@ public class TicketServiceImpl implements TicketService {
             throw new IOException("Repository not found: " + owner + "/" + repo);
         }
 
+        if (!repoElement.isJsonObject()) {
+            throw new IOException("Repository element is not a JSON object");
+        }
+
         JsonObject repoObj = repoElement.getAsJsonObject();
         JsonElement ownerElement = repoObj.get("owner");
 
         if (ownerElement == null || ownerElement.isJsonNull()) {
             throw new IOException("Owner not found for repository: " + owner + "/" + repo);
+        }
+
+        if (!ownerElement.isJsonObject()) {
+            throw new IOException("Owner element is not a JSON object");
         }
 
         JsonObject ownerObj = ownerElement.getAsJsonObject();
@@ -1140,6 +1367,8 @@ public class TicketServiceImpl implements TicketService {
     }
     
     private String[] createIssue(String repoId, String title, String body, List<String> labels, List<String> assignees, String milestone) throws IOException {
+        String requestId = "REQ-" + requestCounter.incrementAndGet();
+        
         String mutation = String.format("""
             mutation($input: CreateIssueInput!) {
               createIssue(input: $input) {
@@ -1162,28 +1391,41 @@ public class TicketServiceImpl implements TicketService {
         JsonObject variables = new JsonObject();
         variables.add("input", input);
         
-        System.out.println("Creating issue with title: " + title);
-        System.out.println("GraphQL Variables: " + variables.toString());
+        // Log request payload for debugging
+        System.out.println("[" + requestId + "] Creating issue: " + title);
+        System.out.println("[" + requestId + "] Request payload: " + gson.toJson(variables));
         
-        JsonObject response = executeGraphQL(mutation, variables);
-        JsonElement data = response.get("data");
+        JsonObject response = executeGraphQL(mutation, variables, requestId);
         
-        if (data != null && data.isJsonObject() && data.getAsJsonObject().has("createIssue")) {
-            JsonObject issue = data.getAsJsonObject().get("createIssue").getAsJsonObject().get("issue").getAsJsonObject();
-            String issueId = issue.get("id").getAsString();
-            String issueNumber = issue.get("number").getAsString();
-            
-            System.out.println("Created issue #" + issueNumber + " with ID: " + issueId);
-            
-            // Add labels to the created issue
-            if (!labels.isEmpty()) {
-                addLabelsToIssue(issueNumber, labels);
-            }
-            
-            return new String[]{issueId, issueNumber};
+        // Log full response for debugging
+        System.out.println("[" + requestId + "] GraphQL Response: " + gson.toJson(response));
+        
+        // Use comprehensive validator
+        GraphQLResponseValidator validator = new GraphQLResponseValidator(response, requestId, gson);
+        try {
+            validator.validateCreateIssueResponse();
+        } catch (IOException e) {
+            System.err.println("[" + requestId + "] VALIDATION FAILED: " + e.getMessage());
+            throw e;
         }
         
-        return null;
+        // Extract issue data after validation
+        JsonElement data = response.get("data");
+        JsonObject dataObj = data.getAsJsonObject();
+        JsonObject createIssueObj = dataObj.getAsJsonObject("createIssue");
+        JsonObject issue = createIssueObj.getAsJsonObject("issue");
+        
+        String issueId = issue.get("id").getAsString();
+        String issueNumber = issue.get("number").getAsString();
+        
+        System.out.println("[" + requestId + "] Successfully created issue #" + issueNumber);
+        
+        // Add labels to the created issue
+        if (!labels.isEmpty()) {
+            addLabelsToIssue(issueNumber, labels);
+        }
+        
+        return new String[]{issueId, issueNumber};
     }
     
     private void addCommentToIssue(String issueId, String commentBody) throws IOException {
@@ -1205,33 +1447,7 @@ public class TicketServiceImpl implements TicketService {
         JsonObject variables = new JsonObject();
         variables.add("input", input);
         
-        System.out.println("Adding comment to issue with ID: " + issueId);
-        
         JsonObject response = executeGraphQL(mutation, variables);
-        
-        System.out.println("Comment creation response: " + response);
-        
-        if (response != null) {
-            if (response.has("errors")) {
-                JsonArray errors = response.getAsJsonArray("errors");
-                System.out.println("GraphQL Errors in comment creation: " + errors.toString());
-            }
-            
-            if (response.has("data")) {
-                JsonElement data = response.get("data");
-                if (data.isJsonObject() && data.getAsJsonObject().has("addComment")) {
-                    JsonObject comment = data.getAsJsonObject().get("addComment").getAsJsonObject().get("comment").getAsJsonObject();
-                    String commentId = comment.get("id").getAsString();
-                    System.out.println("Successfully added comment with ID: " + commentId + " to issue with ID: " + issueId);
-                } else {
-                    System.out.println("Failed to add comment - no addComment in response. Data: " + data.toString());
-                }
-            } else {
-                System.out.println("Failed to add comment - no data in response. Response: " + response.toString());
-            }
-        } else {
-            System.out.println("Failed to add comment - null response");
-        }
     }
     
     private void addSecondIssueBody(String issueId, String issueNumber, String comments) throws IOException {
@@ -1258,21 +1474,8 @@ public class TicketServiceImpl implements TicketService {
         JsonObject commentVariables = new JsonObject();
         commentVariables.add("input", commentInput);
         
-        System.out.println("Adding comment as second body to issue #" + issueNumber);
-        System.out.println("Comment content: " + commentBody.toString());
-        
+
         JsonObject commentResponse = executeGraphQL(commentMutation, commentVariables);
-        
-        if (commentResponse != null && commentResponse.has("data")) {
-            JsonElement data = commentResponse.get("data");
-            if (data.isJsonObject() && data.getAsJsonObject().has("addComment")) {
-                System.out.println("Successfully added second body comment to issue #" + issueNumber);
-            } else {
-                System.out.println("Failed to add second body comment - no addComment in response. Response: " + commentResponse.toString());
-            }
-        } else {
-            System.out.println("Failed to add second body comment - no data in response. Response: " + commentResponse.toString());
-        }
     }
     
     private void closeIssue(String issueNumber) throws IOException {
@@ -1294,16 +1497,7 @@ public class TicketServiceImpl implements TicketService {
         JsonObject variables = new JsonObject();
         variables.add("input", input);
         
-        System.out.println("Closing issue #" + issueNumber);
-        
         JsonObject response = executeGraphQL(mutation, variables);
-        
-        if (response != null && response.has("data")) {
-            JsonElement data = response.get("data");
-            if (data.isJsonObject() && data.getAsJsonObject().has("closeIssue")) {
-                System.out.println("Successfully closed issue #" + issueNumber);
-            }
-        }
     }
     
     private void addLabelsToIssue(String issueNumber, List<String> labels) throws IOException {
@@ -1311,7 +1505,8 @@ public class TicketServiceImpl implements TicketService {
         
         // Use REST API to add labels by name
         String url = String.format("https://api.github.com/repos/cdcent/NCHHSTP-DHP-HSB-EHARS-SANDBOX-GERRY/issues/%s/labels", issueNumber);
-        
+
+     //   String url = String.format("https://api.github.com/repos/bk71-cdc/github-issues/issues/%s/labels", issueNumber);
         JsonArray labelsArray = new JsonArray();
         for (String label : labels) {
             labelsArray.add(label);
@@ -1326,51 +1521,171 @@ public class TicketServiceImpl implements TicketService {
                 .post(body)
                 .build();
         
-        System.out.println("Adding labels to issue #" + issueNumber + ": " + labels);
-        
         try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                String errorBody = response.body() != null ? response.body().string() : "No error body";
-                System.err.println("Failed to add labels: " + response.code() + " - " + errorBody);
-            } else {
-                System.out.println("Successfully added labels to issue #" + issueNumber);
-            }
+            // Silently ignore response
         }
     }
 
     private JsonObject executeGraphQL(String query) throws IOException {
-        return executeGraphQL(query, null);
+        return executeGraphQL(query, null, 3);
     }
     
     private JsonObject executeGraphQL(String query, JsonObject variables) throws IOException {
-        JsonObject payload = new JsonObject();
-        payload.addProperty("query", query);
-        if (variables != null) {
-            payload.add("variables", variables);
-        }
-
-        RequestBody body = RequestBody.create(payload.toString(), MediaType.get("application/json"));
-
-        Request request = new Request.Builder()
-                .url(GITHUB_API_URL)
-                .header("Authorization", "Bearer " + GITHUB_TOKEN)
-                .post(body)
-                .build();
-
-        try (Response response = client.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                String errorBody = response.body() != null ? response.body().string() : "No error body";
-                throw new IOException("Unexpected code: " + response.code() + " - " + errorBody);
-            }
-
-            String responseBody = response.body() != null ? response.body().string() : null;
-            System.out.println("GraphQL Response Body: " + responseBody);
+        return executeGraphQL(query, variables, 3, null);
+    }
+    
+    private JsonObject executeGraphQL(String query, JsonObject variables, String requestId) throws IOException {
+        return executeGraphQL(query, variables, 3, requestId);
+    }
+    
+    private JsonObject executeGraphQL(String query, JsonObject variables, int maxRetries) throws IOException {
+        return executeGraphQL(query, variables, maxRetries, null);
+    }
+    
+    private JsonObject executeGraphQL(String query, JsonObject variables, int maxRetries, String requestId) throws IOException {
+        int attempt = 0;
+        IOException lastException = null;
+        
+        while (attempt <= maxRetries) {
+            attempt++;
             
-            if (responseBody == null || responseBody.trim().isEmpty()) {
-                throw new IOException("Empty response body from GitHub API");
+            try {
+                // Check rate limit before making request
+                if (rateLimitRemaining == 0) {
+                    long waitTime = rateLimitResetTime - System.currentTimeMillis() / 1000;
+                    if (waitTime > 0) {
+                        System.out.println("Rate limit exceeded. Waiting " + waitTime + " seconds until reset.");
+                        Thread.sleep(waitTime * 1000);
+                        rateLimitRemaining = -1; // Reset after waiting
+                    }
+                } else if (rateLimitRemaining > 0 && rateLimitRemaining < 100) {
+                    System.out.println("Rate limit low: " + rateLimitRemaining + " remaining. Consider throttling.");
+                }
+                
+                JsonObject payload = new JsonObject();
+                payload.addProperty("query", query);
+                if (variables != null) {
+                    payload.add("variables", variables);
+                }
+
+                RequestBody body = RequestBody.create(payload.toString(), MediaType.get("application/json"));
+
+                Request request = new Request.Builder()
+                        .url(GITHUB_API_URL)
+                        .header("Authorization", "Bearer " + GITHUB_TOKEN)
+                        .post(body)
+                        .build();
+
+                try (Response response = client.newCall(request).execute()) {
+                    // Extract rate limit headers
+                    String remaining = response.header("X-RateLimit-Remaining");
+                    String reset = response.header("X-RateLimit-Reset");
+                    
+                    if (remaining != null) {
+                        rateLimitRemaining = Integer.parseInt(remaining);
+                        System.out.println("Rate limit remaining: " + rateLimitRemaining);
+                    }
+                    
+                    if (reset != null) {
+                        rateLimitResetTime = Long.parseLong(reset);
+                    }
+                    
+                    // Handle rate limit (HTTP 429)
+                    if (response.code() == 429) {
+                        String retryAfter = response.header("Retry-After");
+                        long waitTime = retryAfter != null ? Long.parseLong(retryAfter) * 1000 : 60000;
+                        
+                        System.err.println("Rate limit hit (429). Waiting " + (waitTime / 1000) + " seconds before retry.");
+                        
+                        if (attempt <= maxRetries) {
+                            Thread.sleep(waitTime);
+                            continue;
+                        } else {
+                            throw new IOException("Rate limit exceeded after " + maxRetries + " retries");
+                        }
+                    }
+                    
+                    // Handle other HTTP errors
+                    if (!response.isSuccessful()) {
+                        String errorBody = response.body() != null ? response.body().string() : "No error body";
+                        String errorMsg = "HTTP " + response.code() + ": " + errorBody;
+                        
+                        // Retry on server errors (5xx) and certain client errors
+                        if ((response.code() >= 500 || response.code() == 408) && attempt <= maxRetries) {
+                            long backoffTime = calculateExponentialBackoff(attempt);
+                            System.err.println(errorMsg + ". Retrying in " + backoffTime + "ms (attempt " + attempt + "/" + maxRetries + ")");
+                            Thread.sleep(backoffTime);
+                            continue;
+                        }
+                        
+                        throw new IOException(errorMsg);
+                    }
+
+                    String responseBody = response.body() != null ? response.body().string() : null;
+
+                    if (responseBody == null || responseBody.trim().isEmpty()) {
+                        if (attempt <= maxRetries) {
+                            long backoffTime = calculateExponentialBackoff(attempt);
+                            System.err.println("Empty response body. Retrying in " + backoffTime + "ms (attempt " + attempt + "/" + maxRetries + ")");
+                            Thread.sleep(backoffTime);
+                            continue;
+                        }
+                        throw new IOException("Empty response body from GitHub API after " + maxRetries + " retries");
+                    }
+                    
+                    try {
+                        JsonElement jsonElement = JsonParser.parseString(responseBody);
+                        if (jsonElement == null || jsonElement.isJsonNull()) {
+                            if (attempt <= maxRetries) {
+                                long backoffTime = calculateExponentialBackoff(attempt);
+                                System.err.println("Null JSON response. Retrying in " + backoffTime + "ms (attempt " + attempt + "/" + maxRetries + ")");
+                                Thread.sleep(backoffTime);
+                                continue;
+                            }
+                            throw new IOException("Failed to parse JSON response: null after " + maxRetries + " retries");
+                        }
+                        return jsonElement.getAsJsonObject();
+                    } catch (JsonSyntaxException e) {
+                        if (attempt <= maxRetries) {
+                            long backoffTime = calculateExponentialBackoff(attempt);
+                            System.err.println("JSON parse error: " + e.getMessage() + ". Retrying in " + backoffTime + "ms (attempt " + attempt + "/" + maxRetries + ")");
+                            Thread.sleep(backoffTime);
+                            continue;
+                        }
+                        throw new IOException("Failed to parse JSON response: " + e.getMessage() + ". Response body: " + responseBody);
+                    }
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IOException("Request interrupted", e);
+            } catch (IOException e) {
+                lastException = e;
+                if (attempt <= maxRetries) {
+                    long backoffTime = calculateExponentialBackoff(attempt);
+                    System.err.println("Request failed: " + e.getMessage() + ". Retrying in " + backoffTime + "ms (attempt " + attempt + "/" + maxRetries + ")");
+                    try {
+                        Thread.sleep(backoffTime);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Retry interrupted", ie);
+                    }
+                }
             }
-            
-            return JsonParser.parseString(responseBody).getAsJsonObject();
         }
+        
+        throw lastException != null ? lastException : new IOException("Failed after " + maxRetries + " retries");
+    }
+    
+    private long calculateExponentialBackoff(int attempt) {
+        // Exponential backoff: 1s, 2s, 4s, 8s, etc., with jitter
+        long baseDelay = 1000L; // 1 second base
+        long maxDelay = 30000L; // 30 seconds max
+        long delay = (long) (baseDelay * Math.pow(2, attempt - 1));
+        
+        // Add jitter (±25%)
+        long jitter = (long) (delay * 0.25 * (Math.random() * 2 - 1));
+        delay = delay + jitter;
+        
+        return Math.min(delay, maxDelay);
     }
 }

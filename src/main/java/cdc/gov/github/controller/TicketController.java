@@ -5,6 +5,7 @@ import cdc.gov.github.dto.LoadTicketsResponse;
 import cdc.gov.github.dto.CreateIssuesRequest;
 import cdc.gov.github.dto.UpdateTicketsRequest;
 import cdc.gov.github.service.TicketService;
+import cdc.gov.github.service.UpdateTicketService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,7 +14,11 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/api")
 public class TicketController {
 
-    private final TicketService ticketService;
+    @Autowired
+    TicketService ticketService;
+
+    @Autowired
+    UpdateTicketService updateTicketService;
 
     @Autowired
     public TicketController(TicketService ticketService) {
@@ -82,7 +87,7 @@ public class TicketController {
                 return ResponseEntity.badRequest().body(errorResponse);
             }
             
-            LoadTicketsResponse response = ticketService.updateTicketsFromExcel(request.getFileName());
+            LoadTicketsResponse response = updateTicketService.updateTicketsFromExcel(request.getFileName());
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             LoadTicketsResponse errorResponse = new LoadTicketsResponse();
