@@ -1168,10 +1168,6 @@ public class TicketServiceImpl implements TicketService {
         body.append(project != null && !project.isEmpty() ? project : "No response");
         body.append("\n\n");
 
-        // Priority field (from improvement_form.yml)
-        body.append("**Priority:** ");
-        body.append(priority != null && !priority.isEmpty() ? priority : "No response");
-        body.append("\n\n");
 
         // Description field (from improvement_form.yml)
         body.append("**Description:** ");
@@ -1217,6 +1213,11 @@ public class TicketServiceImpl implements TicketService {
         // Resolution field
         body.append("**Resolution:** ");
         body.append(resolution != null && !resolution.isEmpty() ? resolution : "No response");
+        body.append("\n\n");
+
+        // Priority field (from improvement_form.yml)
+        body.append("**Priority:** ");
+        body.append(priority != null && !priority.isEmpty() ? priority : "No response");
         body.append("\n\n");
         
         // Created field
